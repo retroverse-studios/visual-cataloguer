@@ -22,14 +22,11 @@ def main() -> None:
 
 @main.command()
 @click.option(
-    "--input-dir-1",
+    "--input-dir",
+    "-i",
     type=click.Path(exists=True, path_type=Path),
-    help="First input directory (supports RAW + JPEG from any camera)",
-)
-@click.option(
-    "--input-dir-2",
-    type=click.Path(exists=True, path_type=Path),
-    help="Second input directory (optional, for multi-camera setups)",
+    required=True,
+    help="Input directory (scans recursively for images)",
 )
 @click.option(
     "--database",
@@ -60,19 +57,14 @@ def main() -> None:
     help="Verbose output",
 )
 def process(
-    input_dir_1: Path | None,
-    input_dir_2: Path | None,
+    input_dir: Path,
     database: Path,
     done_dir: Path | None,
     resume: bool,
     dry_run: bool,
     verbose: bool,
 ) -> None:
-    """Process images from input directories."""
-    if not input_dir_1 and not input_dir_2:
-        console.print("[red]Error:[/red] At least one input directory is required")
-        raise SystemExit(1)
-
+    """Process images from input directory (including subdirectories)."""
     console.print(f"[bold]Visual Cataloguer v{__version__}[/bold]")
     console.print("=" * 40)
 
@@ -80,16 +72,17 @@ def process(
     db = Database(database)
     pipeline = ProcessingPipeline(db)
 
-    # Scan directories
+    # Scan directory recursively
     console.print("\n[bold]Scanning directories...[/bold]")
-    files = pipeline.scan_directories(input_dir_1, input_dir_2)
+    files = pipeline.scan_directory(input_dir)
 
-    if input_dir_1:
-        arw_count = sum(1 for f in files if f.path.suffix.lower() == ".arw")
-        console.print(f"  {input_dir_1.name}: {arw_count} files (.ARW)")
-    if input_dir_2:
-        jpg_count = sum(1 for f in files if f.path.suffix.lower() in [".jpg", ".jpeg"])
-        console.print(f"  {input_dir_2.name}: {jpg_count} files (.JPG)")
+    # Show breakdown by format
+    by_ext: dict[str, int] = {}
+    for f in files:
+        ext = f.path.suffix.lower()
+        by_ext[ext] = by_ext.get(ext, 0) + 1
+    for ext, count in sorted(by_ext.items()):
+        console.print(f"  {ext}: {count} files")
 
     console.print(f"  [bold]Total: {len(files)} files[/bold]")
 
@@ -142,8 +135,8 @@ def process(
     failures = [r for r in results if r.status == "failed"]
     if failures and verbose:
         console.print("\n[red]Failed files:[/red]")
-        for f in failures[:10]:  # Show first 10
-            console.print(f"  {f.source_path}: {f.error_message}")
+        for failure in failures[:10]:  # Show first 10
+            console.print(f"  {failure.source_path}: {failure.error_message}")
         if len(failures) > 10:
             console.print(f"  ... and {len(failures) - 10} more")
 

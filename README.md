@@ -67,11 +67,16 @@ uv sync --extra web
 ### Process Images
 
 ```bash
-# Process images from two cameras
-viscatalog process \
-    --input-dir-1 ./NEX3N \
-    --input-dir-2 ./RX100 \
-    --database ./collection.db
+# Process all images in a directory (scans recursively)
+viscatalog process -i ./photos -d ./collection.db
+
+# Works with any folder structure:
+#   ./photos/
+#   ├── camera1/         (RAW files)
+#   ├── camera2/         (JPEGs)
+#   └── day2/
+#       ├── alice/       (mixed formats)
+#       └── bob/
 
 # View statistics
 viscatalog stats -d ./collection.db

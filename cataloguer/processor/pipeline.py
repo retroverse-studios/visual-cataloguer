@@ -102,41 +102,39 @@ class ProcessingPipeline:
         self.current_box_id: str | None = None
         self.unknown_box_counter: int = 0  # Counter for auto-generated UNKNOWN boxes
 
-    def scan_directories(
-        self,
-        input_dir_1: Path | None = None,
-        input_dir_2: Path | None = None,
-    ) -> list[ImageFile]:
-        """Scan input directories for image files.
+    def scan_directory(self, input_dir: Path) -> list[ImageFile]:
+        """Scan input directory recursively for image files.
 
         Args:
-            input_dir_1: First input directory (e.g., camera 1 RAW files)
-            input_dir_2: Second input directory (e.g., camera 2 JPG files)
+            input_dir: Directory to scan (includes all subdirectories)
 
         Returns:
             List of ImageFile objects sorted by capture time
         """
         files: list[ImageFile] = []
+        seen_paths: set[Path] = set()  # Avoid duplicates from case variations
 
-        for input_dir in [input_dir_1, input_dir_2]:
-            if input_dir is None or not input_dir.exists():
-                continue
+        if not input_dir.exists():
+            return files
 
-            # Scan for all supported extensions (case-insensitive)
-            for ext in self.SUPPORTED_EXTENSIONS:
-                for path in input_dir.glob(f"*{ext}"):
-                    if path.is_file():
-                        camera = self._detect_camera(path)
-                        captured_at = self._get_capture_time(path)
-                        file_hash = self._compute_hash(path)
-                        files.append(ImageFile(path, camera, captured_at, file_hash))
-                # Also check uppercase
-                for path in input_dir.glob(f"*{ext.upper()}"):
-                    if path.is_file():
-                        camera = self._detect_camera(path)
-                        captured_at = self._get_capture_time(path)
-                        file_hash = self._compute_hash(path)
-                        files.append(ImageFile(path, camera, captured_at, file_hash))
+        # Scan recursively for all supported extensions (case-insensitive)
+        for ext in self.SUPPORTED_EXTENSIONS:
+            # Lowercase pattern
+            for path in input_dir.rglob(f"*{ext}"):
+                if path.is_file() and path not in seen_paths:
+                    seen_paths.add(path)
+                    camera = self._detect_camera(path)
+                    captured_at = self._get_capture_time(path)
+                    file_hash = self._compute_hash(path)
+                    files.append(ImageFile(path, camera, captured_at, file_hash))
+            # Uppercase pattern
+            for path in input_dir.rglob(f"*{ext.upper()}"):
+                if path.is_file() and path not in seen_paths:
+                    seen_paths.add(path)
+                    camera = self._detect_camera(path)
+                    captured_at = self._get_capture_time(path)
+                    file_hash = self._compute_hash(path)
+                    files.append(ImageFile(path, camera, captured_at, file_hash))
 
         # Sort by capture time (None values go to end)
         files.sort(key=lambda f: f.captured_at or datetime.max)
@@ -441,8 +439,7 @@ class ProcessingPipeline:
 
 
 def process_collection(
-    input_dir_1: Path | None = None,
-    input_dir_2: Path | None = None,
+    input_dir: Path,
     database_path: Path = Path("collection.db"),
     done_dir: Path | None = None,
     resume: bool = True,
@@ -452,8 +449,7 @@ def process_collection(
     High-level function for processing a complete collection.
 
     Args:
-        input_dir_1: First input directory (NEX-3N with .ARW)
-        input_dir_2: Second input directory (RX100 with .JPG)
+        input_dir: Input directory (scans recursively)
         database_path: Path to SQLite database
         done_dir: Directory to move processed files to
         resume: Skip already-processed files
@@ -464,8 +460,8 @@ def process_collection(
     db = Database(database_path)
     pipeline = ProcessingPipeline(db)
 
-    # Scan directories
-    files = pipeline.scan_directories(input_dir_1, input_dir_2)
+    # Scan directory recursively
+    files = pipeline.scan_directory(input_dir)
     print(f"Found {len(files)} files to process")
 
     # Process files
