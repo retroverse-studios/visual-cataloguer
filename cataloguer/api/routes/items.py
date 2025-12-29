@@ -49,6 +49,7 @@ class ItemListResponse(BaseModel):
 class ItemUpdate(BaseModel):
     """Request model for updating an item."""
 
+    box_id: str | None = None  # Allow reassigning to different box
     title_manual: str | None = None
     platform_manual: str | None = None
     completeness: str | None = None

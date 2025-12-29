@@ -83,6 +83,7 @@ class ProcessingPipeline:
 
         # State machine
         self.current_box_id: str | None = None
+        self.unknown_box_counter: int = 0  # Counter for auto-generated UNKNOWN boxes
 
     def scan_directories(
         self,
@@ -259,6 +260,12 @@ class ProcessingPipeline:
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
         """Handle a game item image."""
+        # If no active box, create an UNKNOWN box (missed divider recovery)
+        if self.current_box_id is None:
+            self.unknown_box_counter += 1
+            self.current_box_id = f"UNKNOWN-{self.unknown_box_counter}"
+            self.db.create_box(self.current_box_id, label="Auto-created (missing divider)")
+
         # Load the image
         image = self._load_image(image_file.path)
 
