@@ -51,6 +51,28 @@ def main() -> None:
     help="Show what would be processed without executing",
 )
 @click.option(
+    "--ai-identify",
+    is_flag=True,
+    help="Use AI (Claude/Ollama) to identify all items",
+)
+@click.option(
+    "--ai-fallback",
+    is_flag=True,
+    help="Use AI only when OCR fails to extract a title",
+)
+@click.option(
+    "--ai-provider",
+    type=click.Choice(["claude", "ollama"]),
+    default="claude",
+    help="AI provider to use (default: claude)",
+)
+@click.option(
+    "--ai-model",
+    type=str,
+    default=None,
+    help="AI model name (default: claude-3-haiku-20240307 for Claude, llava for Ollama)",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -62,15 +84,41 @@ def process(
     done_dir: Path | None,
     resume: bool,
     dry_run: bool,
+    ai_identify: bool,
+    ai_fallback: bool,
+    ai_provider: str,
+    ai_model: str | None,
     verbose: bool,
 ) -> None:
     """Process images from input directory (including subdirectories)."""
     console.print(f"[bold]Visual Cataloguer v{__version__}[/bold]")
     console.print("=" * 40)
 
+    # Determine AI mode
+    if ai_identify:
+        ai_mode = "all"
+    elif ai_fallback:
+        ai_mode = "fallback"
+    else:
+        ai_mode = "none"
+
+    # Initialize identifier if AI is enabled
+    identifier = None
+    if ai_mode != "none":
+        from cataloguer.processor.identifier import ItemIdentifier
+
+        try:
+            identifier = ItemIdentifier(provider=ai_provider, model=ai_model)
+            console.print(f"  AI: {ai_provider} ({identifier.model})")
+            console.print(f"  AI mode: {ai_mode}")
+        except ValueError as e:
+            console.print(f"[red]AI setup failed: {e}[/red]")
+            console.print("[yellow]Falling back to OCR-only mode[/yellow]")
+            ai_mode = "none"
+
     # Initialize database and pipeline
     db = Database(database)
-    pipeline = ProcessingPipeline(db)
+    pipeline = ProcessingPipeline(db, identifier=identifier, ai_mode=ai_mode)
 
     # Scan directory recursively
     console.print("\n[bold]Scanning directories...[/bold]")

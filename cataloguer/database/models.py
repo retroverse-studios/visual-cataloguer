@@ -40,6 +40,11 @@ class Item:
     object_index: int = 1  # Position in original (1, 2, 3...)
     is_primary_image: bool = True  # Best image for this game
 
+    # Item type and AI identification
+    item_type: str = "game"  # game, console, controller, accessory, peripheral, etc.
+    ai_description: str | None = None  # Full LLM description (JSON)
+    ai_identified: bool = False  # Whether AI was used for identification
+
     # Processing results
     object_count: int | None = None  # Total objects detected in source photo
     completeness: str = "unknown"  # 'unknown', 'loose', 'boxed', 'partial', 'complete_set'
@@ -49,6 +54,9 @@ class Item:
     title_guess: str | None = None  # Best guess at game title
     title_confidence: float | None = None  # 0.0 - 1.0
     platform_guess: str | None = None  # e.g., "PS2", "NES", "SNES"
+    brand: str | None = None  # Nintendo, Sony, Sega, etc.
+    region: str | None = None  # NTSC-U, PAL, NTSC-J
+    year: str | None = None  # Release year
     language: str = "en"  # 'en', 'jp', 'foreign', 'unknown'
 
     # Manual overrides
@@ -108,7 +116,7 @@ CREATE TABLE IF NOT EXISTS locations (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Individual game items
+-- Individual items (games, consoles, controllers, books, vinyl, etc.)
 CREATE TABLE IF NOT EXISTS items (
     item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
     location_id     TEXT REFERENCES locations(location_id),
@@ -124,6 +132,11 @@ CREATE TABLE IF NOT EXISTS items (
     object_index    INTEGER DEFAULT 1,
     is_primary_image BOOLEAN DEFAULT TRUE,
 
+    -- Item type and AI identification
+    item_type       TEXT DEFAULT 'game',
+    ai_description  TEXT,
+    ai_identified   BOOLEAN DEFAULT FALSE,
+
     -- Processing results
     object_count    INTEGER,
     completeness    TEXT DEFAULT 'unknown',
@@ -133,6 +146,9 @@ CREATE TABLE IF NOT EXISTS items (
     title_guess     TEXT,
     title_confidence REAL,
     platform_guess  TEXT,
+    brand           TEXT,
+    region          TEXT,
+    year            TEXT,
     language        TEXT DEFAULT 'en',
 
     -- Manual overrides
@@ -185,6 +201,7 @@ CREATE TABLE IF NOT EXISTS processing_log (
 CREATE INDEX IF NOT EXISTS idx_items_location ON items(location_id);
 CREATE INDEX IF NOT EXISTS idx_items_title ON items(title_guess);
 CREATE INDEX IF NOT EXISTS idx_items_platform ON items(platform_guess);
+CREATE INDEX IF NOT EXISTS idx_items_item_type ON items(item_type);
 CREATE INDEX IF NOT EXISTS idx_items_needs_review ON items(needs_review);
 CREATE INDEX IF NOT EXISTS idx_items_ebay ON items(ebay_listed);
 CREATE INDEX IF NOT EXISTS idx_items_group ON items(source_item_group);
@@ -298,10 +315,12 @@ class Database:
                 INSERT INTO items (
                     location_id, source_camera, source_filename, source_hash, captured_at,
                     source_item_group, object_index, is_primary_image,
+                    item_type, ai_description, ai_identified,
                     object_count, completeness,
-                    ocr_text_raw, title_guess, title_confidence, platform_guess, language,
+                    ocr_text_raw, title_guess, title_confidence, platform_guess,
+                    brand, region, year, language,
                     needs_review, review_reason, phash, ebay_listed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.location_id,
@@ -312,12 +331,18 @@ class Database:
                     item.source_item_group,
                     item.object_index,
                     item.is_primary_image,
+                    item.item_type,
+                    item.ai_description,
+                    item.ai_identified,
                     item.object_count,
                     item.completeness,
                     item.ocr_text_raw,
                     item.title_guess,
                     item.title_confidence,
                     item.platform_guess,
+                    item.brand,
+                    item.region,
+                    item.year,
                     item.language,
                     item.needs_review,
                     item.review_reason,

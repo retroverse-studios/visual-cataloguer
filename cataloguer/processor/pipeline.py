@@ -26,6 +26,7 @@ from tqdm import tqdm
 
 from cataloguer.database.models import Database, Item
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
+from cataloguer.processor.identifier import IdentificationResult, ItemIdentifier
 
 
 @dataclass
@@ -82,6 +83,8 @@ class ProcessingPipeline:
         self,
         database: Database,
         classifier: ImageClassifier | None = None,
+        identifier: ItemIdentifier | None = None,
+        ai_mode: str = "none",  # "none", "fallback", "all"
         jpeg_quality: int = 85,
         thumbnail_size: int = 400,
     ) -> None:
@@ -90,11 +93,18 @@ class ProcessingPipeline:
         Args:
             database: Database instance for storing results
             classifier: Image classifier (creates default if not provided)
+            identifier: Item identifier for AI-based identification
+            ai_mode: When to use AI identification:
+                     - "none": Never use AI (OCR only)
+                     - "fallback": Use AI when OCR fails or low confidence
+                     - "all": Use AI for all items
             jpeg_quality: JPEG quality for stored images (0-100)
             thumbnail_size: Max dimension for thumbnails
         """
         self.db = database
         self.classifier = classifier or ImageClassifier()
+        self.identifier = identifier
+        self.ai_mode = ai_mode
         self.jpeg_quality = jpeg_quality
         self.thumbnail_size = thumbnail_size
 
@@ -323,6 +333,27 @@ class ProcessingPipeline:
 
         # Run OCR to extract text
         ocr_text = self._extract_text(image)
+        ocr_title = self._guess_title(ocr_text)
+
+        # Determine if we should use AI identification
+        use_ai = self._should_use_ai(ocr_text, ocr_title)
+        ai_result: IdentificationResult | None = None
+
+        if use_ai and self.identifier:
+            try:
+                # Use JPEG for AI identification (more efficient than RAW)
+                jpeg_for_ai = self._encode_jpeg(image)
+                ai_result = self.identifier.identify_bytes(jpeg_for_ai)
+            except Exception as e:
+                # AI failed, fall back to OCR
+                ai_result = None
+                # Add note about AI failure
+                classification = ClassificationResult(
+                    image_type=classification.image_type,
+                    confidence=classification.confidence,
+                    needs_review=True,
+                    review_reason=f"AI identification failed: {e}",
+                )
 
         # Create thumbnail
         thumbnail = self._create_thumbnail(image)
@@ -331,22 +362,13 @@ class ProcessingPipeline:
         full_jpeg = self._encode_jpeg(image)
         thumb_jpeg = self._encode_jpeg(thumbnail)
 
-        # Create item record
-        item = Item(
-            location_id=self.current_location_id,
-            source_camera=image_file.camera,
-            source_filename=image_file.path.name,
-            source_hash=image_file.file_hash,
-            captured_at=image_file.captured_at,
-            source_item_group=str(uuid.uuid4()),
-            object_index=1,
-            is_primary_image=True,
-            object_count=1,
-            completeness="unknown",
-            ocr_text_raw=ocr_text,
-            title_guess=self._guess_title(ocr_text),
-            needs_review=classification.needs_review,
-            review_reason=classification.review_reason,
+        # Build item from OCR and/or AI results
+        item = self._build_item(
+            image_file=image_file,
+            ocr_text=ocr_text,
+            ocr_title=ocr_title,
+            ai_result=ai_result,
+            classification=classification,
         )
 
         item_id = self.db.create_item(item)
@@ -365,6 +387,98 @@ class ProcessingPipeline:
             image_type=ImageType.GAME_ITEM,
             items_created=1,
             location_id=self.current_location_id,
+        )
+
+    def _should_use_ai(self, ocr_text: str | None, ocr_title: str | None) -> bool:
+        """Determine if AI identification should be used."""
+        if self.ai_mode == "none":
+            return False
+        if self.ai_mode == "all":
+            return True
+        # "fallback" mode - use AI if OCR didn't give us a good title
+        if not ocr_title or len(ocr_title) < 3:
+            return True
+        # Also use AI if OCR text is very short (likely no readable text)
+        return not ocr_text or len(ocr_text.strip()) < 10
+
+    def _build_item(
+        self,
+        image_file: ImageFile,
+        ocr_text: str | None,
+        ocr_title: str | None,
+        ai_result: IdentificationResult | None,
+        classification: ClassificationResult,
+    ) -> Item:
+        """Build an Item from OCR and AI identification results."""
+        import json
+
+        # Start with OCR-based defaults
+        title_guess = ocr_title
+        platform_guess = None
+        item_type = "game"
+        completeness = "unknown"
+        brand = None
+        region = None
+        year = None
+        ai_description = None
+        ai_identified = False
+        needs_review = classification.needs_review
+        review_reason = classification.review_reason
+
+        # Override with AI results if available
+        if ai_result:
+            ai_identified = True
+            ai_description = json.dumps(ai_result.raw_response)
+
+            # Use AI title if OCR didn't get one or AI has higher confidence
+            if ai_result.title:
+                title_guess = ai_result.title
+
+            if ai_result.platform:
+                platform_guess = ai_result.platform
+
+            if ai_result.item_type:
+                item_type = ai_result.item_type.value
+
+            if ai_result.completeness:
+                completeness = ai_result.completeness
+
+            if ai_result.brand:
+                brand = ai_result.brand
+
+            if ai_result.region:
+                region = ai_result.region
+
+            if ai_result.year:
+                year = ai_result.year
+
+            # Flag low-confidence AI results for review
+            if ai_result.confidence == "low":
+                needs_review = True
+                review_reason = "Low AI confidence"
+
+        return Item(
+            location_id=self.current_location_id,
+            source_camera=image_file.camera,
+            source_filename=image_file.path.name,
+            source_hash=image_file.file_hash,
+            captured_at=image_file.captured_at,
+            source_item_group=str(uuid.uuid4()),
+            object_index=1,
+            is_primary_image=True,
+            item_type=item_type,
+            ai_description=ai_description,
+            ai_identified=ai_identified,
+            object_count=1,
+            completeness=completeness,
+            ocr_text_raw=ocr_text,
+            title_guess=title_guess,
+            platform_guess=platform_guess,
+            brand=brand,
+            region=region,
+            year=year,
+            needs_review=needs_review,
+            review_reason=review_reason,
         )
 
     def _load_image(self, path: Path) -> np.ndarray:

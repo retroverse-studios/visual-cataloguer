@@ -1,6 +1,6 @@
 [project]
 name = "visual-cataloguer"
-version = "0.4.0"
+version = "0.5.0"
 description = "Batch catalogue physical collections using visual dividers (QR codes) and automated image processing"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,6 +24,7 @@ dependencies = [
     "exifread>=3.0.0",
     "click>=8.0.0",
     "rich>=13.0.0",
+    "anthropic>=0.75.0",
 ]
 
 [project.optional-dependencies]
