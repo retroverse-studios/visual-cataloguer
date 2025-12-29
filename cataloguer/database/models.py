@@ -300,8 +300,8 @@ class Database:
                     source_item_group, object_index, is_primary_image,
                     object_count, completeness,
                     ocr_text_raw, title_guess, title_confidence, platform_guess, language,
-                    needs_review, review_reason, phash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    needs_review, review_reason, phash, ebay_listed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.box_id,
@@ -322,6 +322,7 @@ class Database:
                     item.needs_review,
                     item.review_reason,
                     item.phash,
+                    item.ebay_listed,
                 ),
             )
             return cursor.lastrowid or 0

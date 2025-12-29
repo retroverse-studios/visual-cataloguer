@@ -1,6 +1,6 @@
 [project]
 name = "visual-cataloguer"
-version = "0.1.1"
+version = "0.2.0"
 description = "Batch catalogue physical collections using visual dividers (QR codes) and automated image processing"
 readme = "README.md"
 license = {text = "MIT"}
@@ -69,6 +69,7 @@ dev = [
     "types-Pillow",
     "twine>=6.2.0",
     "build>=1.3.0",
+    "httpx>=0.27.0",
 ]
 
 [tool.ruff]

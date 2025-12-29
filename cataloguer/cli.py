@@ -314,5 +314,52 @@ def search(
         console.print(f"\n{len(rows)} items found.")
 
 
+@main.command()
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option(
+    "--host",
+    default="0.0.0.0",
+    help="Host to bind to (default: 0.0.0.0)",
+)
+@click.option(
+    "--port",
+    "-p",
+    default=8000,
+    help="Port to bind to (default: 8000)",
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development",
+)
+def serve(database: Path, host: str, port: int, reload: bool) -> None:
+    """Start the web interface server."""
+    import uvicorn
+
+    from cataloguer.api.deps import configure_database
+
+    # Configure the database path
+    configure_database(database.absolute())
+
+    console.print(f"[bold]Visual Cataloguer v{__version__}[/bold]")
+    console.print("=" * 40)
+    console.print(f"Database: {database.absolute()}")
+    console.print(f"Server: http://{host}:{port}")
+    console.print("\nPress Ctrl+C to stop")
+
+    uvicorn.run(
+        "cataloguer.api.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 if __name__ == "__main__":
     main()
