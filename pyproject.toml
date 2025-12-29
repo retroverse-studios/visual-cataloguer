@@ -1,6 +1,6 @@
 [project]
 name = "visual-cataloguer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Batch catalogue physical collections using visual dividers (QR codes) and automated image processing"
 readme = "README.md"
 license = {text = "MIT"}
@@ -51,6 +51,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["cataloguer"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "tests/",
+    "data/",
+    ".git/",
+    ".venv/",
+    "dist/",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
@@ -58,6 +67,8 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-Pillow",
+    "twine>=6.2.0",
+    "build>=1.3.0",
 ]
 
 [tool.ruff]
