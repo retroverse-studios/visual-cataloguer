@@ -24,12 +24,12 @@ def main() -> None:
 @click.option(
     "--input-dir-1",
     type=click.Path(exists=True, path_type=Path),
-    help="First input directory (e.g., NEX-3N with .ARW files)",
+    help="First input directory (supports RAW + JPEG from any camera)",
 )
 @click.option(
     "--input-dir-2",
     type=click.Path(exists=True, path_type=Path),
-    help="Second input directory (e.g., RX100 with .JPG files)",
+    help="Second input directory (optional, for multi-camera setups)",
 )
 @click.option(
     "--database",

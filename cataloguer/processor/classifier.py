@@ -15,6 +15,24 @@ import cv2
 import numpy as np
 import pytesseract
 
+# RAW file extensions supported by LibRaw/rawpy
+RAW_EXTENSIONS: set[str] = {
+    ".arw", ".srf", ".sr2",  # Sony
+    ".cr2", ".cr3", ".crw",  # Canon
+    ".nef", ".nrw",          # Nikon
+    ".raf",                   # Fuji
+    ".orf",                   # Olympus
+    ".rw2",                   # Panasonic
+    ".pef",                   # Pentax
+    ".dng",                   # Adobe DNG (universal)
+    ".rwl",                   # Leica
+    ".3fr",                   # Hasselblad
+    ".erf",                   # Epson
+    ".kdc", ".dcr",          # Kodak
+    ".mrw",                   # Minolta
+    ".x3f",                   # Sigma
+}
+
 
 class ImageType(Enum):
     """Types of images in the cataloguing workflow."""
@@ -114,21 +132,21 @@ class ImageClassifier:
     def _load_image(self, file_path: Path) -> np.ndarray:
         """Load an image file into OpenCV format.
 
-        Supports JPG, PNG, and ARW (Sony RAW) files.
+        Supports JPEG, PNG, TIFF, and RAW files (Canon, Nikon, Sony, Fuji, etc.).
         """
         suffix = file_path.suffix.lower()
 
-        if suffix == ".arw":
+        if suffix in RAW_EXTENSIONS:
             return self._load_raw(file_path)
         else:
-            # Standard image formats
+            # Standard image formats (JPEG, PNG, TIFF, etc.)
             image = cv2.imread(str(file_path))
             if image is None:
                 raise ValueError(f"Failed to load image: {file_path}")
             return image
 
     def _load_raw(self, file_path: Path) -> np.ndarray:
-        """Load a RAW file (ARW) using rawpy."""
+        """Load a RAW file using rawpy (supports all major camera brands)."""
         import rawpy
 
         with rawpy.imread(str(file_path)) as raw:

@@ -54,12 +54,29 @@ class ProcessingResult:
 class ProcessingPipeline:
     """Main processing pipeline for cataloguing images."""
 
-    # Camera detection patterns
-    CAMERA_PATTERNS: ClassVar[dict[str, str]] = {
-        ".arw": "NEX-3N",
-        ".jpg": "RX100M4",
-        ".jpeg": "RX100M4",
+    # RAW file extensions supported by LibRaw/rawpy
+    RAW_EXTENSIONS: ClassVar[set[str]] = {
+        ".arw", ".srf", ".sr2",  # Sony
+        ".cr2", ".cr3", ".crw",  # Canon
+        ".nef", ".nrw",          # Nikon
+        ".raf",                   # Fuji
+        ".orf",                   # Olympus
+        ".rw2",                   # Panasonic
+        ".pef",                   # Pentax
+        ".dng",                   # Adobe DNG (universal)
+        ".rwl",                   # Leica
+        ".3fr",                   # Hasselblad
+        ".erf",                   # Epson
+        ".kdc", ".dcr",          # Kodak
+        ".mrw",                   # Minolta
+        ".x3f",                   # Sigma
     }
+
+    # JPEG extensions
+    JPEG_EXTENSIONS: ClassVar[set[str]] = {".jpg", ".jpeg"}
+
+    # All supported extensions
+    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = RAW_EXTENSIONS | JPEG_EXTENSIONS | {".png", ".tiff", ".tif"}
 
     def __init__(
         self,
@@ -93,8 +110,8 @@ class ProcessingPipeline:
         """Scan input directories for image files.
 
         Args:
-            input_dir_1: First input directory (typically NEX-3N with .ARW)
-            input_dir_2: Second input directory (typically RX100 with .JPG)
+            input_dir_1: First input directory (e.g., camera 1 RAW files)
+            input_dir_2: Second input directory (e.g., camera 2 JPG files)
 
         Returns:
             List of ImageFile objects sorted by capture time
@@ -105,10 +122,18 @@ class ProcessingPipeline:
             if input_dir is None or not input_dir.exists():
                 continue
 
-            for ext in [".arw", ".ARW", ".jpg", ".JPG", ".jpeg", ".JPEG"]:
+            # Scan for all supported extensions (case-insensitive)
+            for ext in self.SUPPORTED_EXTENSIONS:
                 for path in input_dir.glob(f"*{ext}"):
                     if path.is_file():
-                        camera = self.CAMERA_PATTERNS.get(ext.lower(), "UNKNOWN")
+                        camera = self._detect_camera(path)
+                        captured_at = self._get_capture_time(path)
+                        file_hash = self._compute_hash(path)
+                        files.append(ImageFile(path, camera, captured_at, file_hash))
+                # Also check uppercase
+                for path in input_dir.glob(f"*{ext.upper()}"):
+                    if path.is_file():
+                        camera = self._detect_camera(path)
                         captured_at = self._get_capture_time(path)
                         file_hash = self._compute_hash(path)
                         files.append(ImageFile(path, camera, captured_at, file_hash))
@@ -116,6 +141,33 @@ class ProcessingPipeline:
         # Sort by capture time (None values go to end)
         files.sort(key=lambda f: f.captured_at or datetime.max)
         return files
+
+    def _detect_camera(self, path: Path) -> str:
+        """Detect camera model from EXIF data or file extension."""
+        try:
+            with open(path, "rb") as f:
+                tags = exifread.process_file(f, stop_tag="Model", details=False)
+
+            model = tags.get("Image Model")
+            if model:
+                return str(model).strip()
+        except Exception:
+            pass
+
+        # Fallback: use extension to guess camera type
+        ext = path.suffix.lower()
+        extension_hints = {
+            ".arw": "Sony", ".srf": "Sony", ".sr2": "Sony",
+            ".cr2": "Canon", ".cr3": "Canon", ".crw": "Canon",
+            ".nef": "Nikon", ".nrw": "Nikon",
+            ".raf": "Fujifilm",
+            ".orf": "Olympus",
+            ".rw2": "Panasonic",
+            ".pef": "Pentax",
+            ".dng": "DNG",
+            ".rwl": "Leica",
+        }
+        return extension_hints.get(ext, "UNKNOWN")
 
     def _get_capture_time(self, path: Path) -> datetime | None:
         """Extract capture time from EXIF data."""
@@ -316,9 +368,9 @@ class ProcessingPipeline:
         )
 
     def _load_image(self, path: Path) -> np.ndarray:
-        """Load an image file."""
+        """Load an image file (supports RAW, JPEG, PNG, TIFF)."""
         suffix = path.suffix.lower()
-        if suffix == ".arw":
+        if suffix in self.RAW_EXTENSIONS:
             import rawpy
 
             with rawpy.imread(str(path)) as raw:
