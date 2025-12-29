@@ -54,3 +54,4 @@ htmlcov/
 # Project specific
 processed_originals/
 failures.txt
+data/
