@@ -16,7 +16,7 @@ class ItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     item_id: int
-    box_id: str | None
+    location_id: str | None
     source_camera: str | None
     source_filename: str | None
     captured_at: str | None
@@ -49,7 +49,7 @@ class ItemListResponse(BaseModel):
 class ItemUpdate(BaseModel):
     """Request model for updating an item."""
 
-    box_id: str | None = None  # Allow reassigning to different box
+    location_id: str | None = None  # Allow reassigning to different location
     title_manual: str | None = None
     platform_manual: str | None = None
     completeness: str | None = None
@@ -64,7 +64,7 @@ def row_to_item(row: dict[str, Any]) -> ItemResponse:
     """Convert a database row to an ItemResponse."""
     return ItemResponse(
         item_id=row["item_id"],
-        box_id=row["box_id"],
+        location_id=row["location_id"],
         source_camera=row["source_camera"],
         source_filename=row["source_filename"],
         captured_at=str(row["captured_at"]) if row["captured_at"] else None,
@@ -91,7 +91,7 @@ def list_items(
     db: DbDep,
     page: Annotated[int, Query(ge=1)] = 1,
     per_page: Annotated[int, Query(ge=1, le=100)] = 20,
-    box_id: str | None = None,
+    location_id: str | None = None,
     platform: str | None = None,
     completeness: str | None = None,
     needs_review: bool | None = None,
@@ -103,9 +103,9 @@ def list_items(
         conditions = []
         params: list[str | int] = []
 
-        if box_id:
-            conditions.append("box_id = ?")
-            params.append(box_id)
+        if location_id:
+            conditions.append("location_id = ?")
+            params.append(location_id)
         if platform:
             conditions.append("(platform_guess = ? OR platform_manual = ?)")
             params.extend([platform, platform])

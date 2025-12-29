@@ -37,28 +37,28 @@ class TestDatabaseInit:
         tables = [row[0] for row in cursor.fetchall()]
         conn.close()
 
-        assert "boxes" in tables
+        assert "locations" in tables
         assert "items" in tables
         assert "item_images" in tables
         assert "processing_log" in tables
 
 
-class TestBoxOperations:
-    """Tests for box CRUD operations."""
+class TestLocationOperations:
+    """Tests for location CRUD operations."""
 
-    def test_create_box(self, db: Database) -> None:
-        """Test creating a box."""
-        db.create_box("BOX-1", "First Box")
-        box = db.get_box("BOX-1")
+    def test_create_location(self, db: Database) -> None:
+        """Test creating a location."""
+        db.create_location("BOX-1", "First Box")
+        location = db.get_location("BOX-1")
 
-        assert box is not None
-        assert box.box_id == "BOX-1"
-        assert box.label == "First Box"
+        assert location is not None
+        assert location.location_id == "BOX-1"
+        assert location.label == "First Box"
 
-    def test_get_nonexistent_box(self, db: Database) -> None:
-        """Test getting a box that doesn't exist."""
-        box = db.get_box("NONEXISTENT")
-        assert box is None
+    def test_get_nonexistent_location(self, db: Database) -> None:
+        """Test getting a location that doesn't exist."""
+        location = db.get_location("NONEXISTENT")
+        assert location is None
 
 
 class TestItemOperations:
@@ -66,9 +66,9 @@ class TestItemOperations:
 
     def test_create_item(self, db: Database) -> None:
         """Test creating an item."""
-        db.create_box("BOX-1")
+        db.create_location("BOX-1")
         item = Item(
-            box_id="BOX-1",
+            location_id="BOX-1",
             source_filename="test.jpg",
             source_hash="abc123",
             title_guess="Test Game",
@@ -104,5 +104,5 @@ class TestStats:
         stats = db.get_stats()
 
         assert stats["total_items"] == 0
-        assert stats["total_boxes"] == 0
+        assert stats["total_locations"] == 0
         assert stats["needs_review"] == 0

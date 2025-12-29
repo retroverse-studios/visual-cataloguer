@@ -159,7 +159,7 @@ def stats(database: Path) -> None:
     table.add_column("Value", style="green")
 
     table.add_row("Total items", str(db_stats["total_items"]))
-    table.add_row("Total boxes", str(db_stats["total_boxes"]))
+    table.add_row("Total locations", str(db_stats["total_locations"]))
     table.add_row("Needs review", str(db_stats["needs_review"]))
     table.add_row("eBay listed", str(db_stats["ebay_listed"]))
     table.add_row("Processed files", str(db_stats["processed_files"]))
@@ -176,51 +176,54 @@ def stats(database: Path) -> None:
     default="collection.db",
     help="Path to SQLite database",
 )
-@click.option("--boxes", is_flag=True, help="List all boxes")
-@click.option("--box", type=str, help="List items in a specific box")
+@click.option("--locations", is_flag=True, help="List all locations")
+@click.option("--location", type=str, help="List items in a specific location")
 @click.option("--needs-review", is_flag=True, help="List items needing review")
 @click.option("--limit", type=int, default=20, help="Maximum items to show")
 def list_items(
     database: Path,
-    boxes: bool,
-    box: str | None,
+    locations: bool,
+    location: str | None,
     needs_review: bool,
     limit: int,
 ) -> None:
-    """List items or boxes in the catalogue."""
+    """List items or locations in the catalogue."""
     db = Database(database)
 
     with db.connection() as conn:
-        if boxes:
-            # List all boxes
+        if locations:
+            # List all locations
             rows = conn.execute(
                 """
-                SELECT b.box_id, b.label, COUNT(i.item_id) as item_count
-                FROM boxes b
-                LEFT JOIN items i ON b.box_id = i.box_id
-                GROUP BY b.box_id
-                ORDER BY b.box_id
+                SELECT l.location_id, l.label, COUNT(i.item_id) as item_count
+                FROM locations l
+                LEFT JOIN items i ON l.location_id = i.location_id
+                GROUP BY l.location_id
+                ORDER BY l.location_id
                 """
             ).fetchall()
 
-            table = Table(title="Boxes")
-            table.add_column("Box ID", style="cyan")
+            table = Table(title="Locations")
+            table.add_column("Location ID", style="cyan")
             table.add_column("Label", style="white")
             table.add_column("Items", style="green")
 
             for row in rows:
-                table.add_row(row["box_id"], row["label"] or "", str(row["item_count"]))
+                table.add_row(row["location_id"], row["label"] or "", str(row["item_count"]))
 
             console.print(table)
 
         else:
             # List items
-            query = "SELECT item_id, box_id, title_guess, platform_guess, completeness FROM items"
+            query = """
+                SELECT item_id, location_id, title_guess, platform_guess, completeness
+                FROM items
+            """
             params: list[str] = []
 
-            if box:
-                query += " WHERE box_id = ?"
-                params.append(box)
+            if location:
+                query += " WHERE location_id = ?"
+                params.append(location)
             elif needs_review:
                 query += " WHERE needs_review = 1"
 
@@ -232,7 +235,7 @@ def list_items(
             table.add_column("Title", style="white")
             table.add_column("Platform", style="yellow")
             table.add_column("Status", style="green")
-            table.add_column("Box", style="blue")
+            table.add_column("Location", style="blue")
 
             for row in rows:
                 table.add_row(
@@ -240,7 +243,7 @@ def list_items(
                     (row["title_guess"] or "Unknown")[:40],
                     row["platform_guess"] or "?",
                     row["completeness"],
-                    row["box_id"] or "UNASSIGNED",
+                    row["location_id"] or "UNASSIGNED",
                 )
 
             console.print(table)
@@ -257,13 +260,13 @@ def list_items(
     help="Path to SQLite database",
 )
 @click.option("--platform", type=str, help="Filter by platform")
-@click.option("--box", type=str, help="Filter by box")
+@click.option("--location", type=str, help="Filter by location")
 @click.option("--limit", type=int, default=20, help="Maximum items to show")
 def search(
     query: str,
     database: Path,
     platform: str | None,
-    box: str | None,
+    location: str | None,
     limit: int,
 ) -> None:
     """Search items in the catalogue."""
@@ -271,7 +274,7 @@ def search(
 
     with db.connection() as conn:
         sql = """
-            SELECT item_id, box_id, title_guess, platform_guess, completeness
+            SELECT item_id, location_id, title_guess, platform_guess, completeness
             FROM items
             WHERE (title_guess LIKE ? OR ocr_text_raw LIKE ? OR notes LIKE ?)
         """
@@ -280,9 +283,9 @@ def search(
         if platform:
             sql += " AND platform_guess = ?"
             params.append(platform)
-        if box:
-            sql += " AND box_id = ?"
-            params.append(box)
+        if location:
+            sql += " AND location_id = ?"
+            params.append(location)
 
         sql += f" LIMIT {limit}"
         rows = conn.execute(sql, params).fetchall()
@@ -292,7 +295,7 @@ def search(
         table.add_column("Title", style="white")
         table.add_column("Platform", style="yellow")
         table.add_column("Status", style="green")
-        table.add_column("Box", style="blue")
+        table.add_column("Location", style="blue")
 
         for row in rows:
             table.add_row(
@@ -300,7 +303,7 @@ def search(
                 (row["title_guess"] or "Unknown")[:40],
                 row["platform_guess"] or "?",
                 row["completeness"],
-                row["box_id"] or "UNASSIGNED",
+                row["location_id"] or "UNASSIGNED",
             )
 
         console.print(table)

@@ -13,10 +13,10 @@ from pathlib import Path
 
 
 @dataclass
-class Box:
-    """Box/container tracking."""
+class Location:
+    """Location/container tracking (box, shelf, room, etc.)."""
 
-    box_id: str  # e.g., "BOX-1", "BOX-47", "SHELF-A3"
+    location_id: str  # e.g., "BOX-1", "SHELF-A3", "GARAGE-RACK2-BIN3"
     label: str | None = None
     notes: str | None = None
     created_at: datetime | None = None
@@ -27,7 +27,7 @@ class Item:
     """Individual game/item record."""
 
     item_id: int | None = None
-    box_id: str | None = None
+    location_id: str | None = None
 
     # Source info
     source_camera: str | None = None  # "NEX-3N" or "RX100M4"
@@ -100,9 +100,9 @@ class ProcessingLog:
 
 # SQL Schema
 SCHEMA = """
--- Box/container tracking
-CREATE TABLE IF NOT EXISTS boxes (
-    box_id          TEXT PRIMARY KEY,
+-- Location/container tracking (box, shelf, room, etc.)
+CREATE TABLE IF NOT EXISTS locations (
+    location_id     TEXT PRIMARY KEY,
     label           TEXT,
     notes           TEXT,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS boxes (
 -- Individual game items
 CREATE TABLE IF NOT EXISTS items (
     item_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    box_id          TEXT REFERENCES boxes(box_id),
+    location_id     TEXT REFERENCES locations(location_id),
 
     -- Source info
     source_camera   TEXT,
@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS processing_log (
 );
 
 -- Indexes for common queries
-CREATE INDEX IF NOT EXISTS idx_items_box ON items(box_id);
+CREATE INDEX IF NOT EXISTS idx_items_location ON items(location_id);
 CREATE INDEX IF NOT EXISTS idx_items_title ON items(title_guess);
 CREATE INDEX IF NOT EXISTS idx_items_platform ON items(platform_guess);
 CREATE INDEX IF NOT EXISTS idx_items_needs_review ON items(needs_review);
@@ -239,23 +239,23 @@ class Database:
         finally:
             conn.close()
 
-    def create_box(self, box_id: str, label: str | None = None) -> None:
-        """Create or update a box record."""
+    def create_location(self, location_id: str, label: str | None = None) -> None:
+        """Create or update a location record."""
         with self.connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO boxes (box_id, label) VALUES (?, ?)",
-                (box_id, label),
+                "INSERT OR REPLACE INTO locations (location_id, label) VALUES (?, ?)",
+                (location_id, label),
             )
 
-    def get_box(self, box_id: str) -> Box | None:
-        """Get a box by ID."""
+    def get_location(self, location_id: str) -> Location | None:
+        """Get a location by ID."""
         with self.connection() as conn:
             row = conn.execute(
-                "SELECT * FROM boxes WHERE box_id = ?", (box_id,)
+                "SELECT * FROM locations WHERE location_id = ?", (location_id,)
             ).fetchone()
             if row:
-                return Box(
-                    box_id=row["box_id"],
+                return Location(
+                    location_id=row["location_id"],
                     label=row["label"],
                     notes=row["notes"],
                     created_at=row["created_at"],
@@ -296,7 +296,7 @@ class Database:
             cursor = conn.execute(
                 """
                 INSERT INTO items (
-                    box_id, source_camera, source_filename, source_hash, captured_at,
+                    location_id, source_camera, source_filename, source_hash, captured_at,
                     source_item_group, object_index, is_primary_image,
                     object_count, completeness,
                     ocr_text_raw, title_guess, title_confidence, platform_guess, language,
@@ -304,7 +304,7 @@ class Database:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    item.box_id,
+                    item.location_id,
                     item.source_camera,
                     item.source_filename,
                     item.source_hash,
@@ -355,8 +355,8 @@ class Database:
             row = conn.execute("SELECT COUNT(*) FROM items").fetchone()
             stats["total_items"] = row[0] if row else 0
 
-            row = conn.execute("SELECT COUNT(*) FROM boxes").fetchone()
-            stats["total_boxes"] = row[0] if row else 0
+            row = conn.execute("SELECT COUNT(*) FROM locations").fetchone()
+            stats["total_locations"] = row[0] if row else 0
 
             row = conn.execute("SELECT COUNT(*) FROM items WHERE needs_review = 1").fetchone()
             stats["needs_review"] = row[0] if row else 0

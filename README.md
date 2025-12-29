@@ -8,7 +8,7 @@ You have thousands of items (retro games, books, vinyl, tools) in boxes. You nee
 
 ## The Solution
 
-1. Print QR code dividers (one per box)
+1. Print QR code dividers (one per location/box/shelf)
 2. Photograph: `divider → items → items → black frame → divider → ...`
 3. Run `viscatalog process ./photos`
 4. Browse your collection via web UI or CLI
@@ -24,13 +24,13 @@ You have thousands of items (retro games, books, vinyl, tools) in boxes. You nee
            ┌───────────────┼───────────────┐
            ▼               ▼               ▼
      ┌──────────┐    ┌──────────┐    ┌──────────┐
-     │   BOX    │    │  BLACK   │    │   GAME   │
+     │ LOCATION │    │  BLACK   │    │   GAME   │
      │ DIVIDER  │    │  FRAME   │    │   ITEM   │
      └──────────┘    └──────────┘    └──────────┘
 ```
 
-- **Box Divider**: QR code or text (e.g., "BOX-1") - starts a new box
-- **Black Frame**: Dark image - ends current box
+- **Location Divider**: QR code or text (e.g., "BOX-1", "SHELF-A3") - starts a new location
+- **Black Frame**: Dark image - ends current location
 - **Game Item**: Everything else - catalogued with OCR
 
 ## Features
@@ -81,8 +81,8 @@ viscatalog process -i ./photos -d ./collection.db
 # View statistics
 viscatalog stats -d ./collection.db
 
-# List boxes
-viscatalog list --boxes -d ./collection.db
+# List locations
+viscatalog list --locations -d ./collection.db
 
 # Search items
 viscatalog search "zelda" -d ./collection.db
@@ -100,8 +100,8 @@ viscatalog serve -d ./collection.db --port 8000
 The web interface provides:
 - **Browse**: Grid view of all items with thumbnails
 - **Search**: Full-text search across titles and OCR text
-- **Filter**: By box, platform, completeness, listed/unlisted status
-- **Edit**: Update titles, platforms, notes, and box assignments
+- **Filter**: By location, platform, completeness, listed/unlisted status
+- **Edit**: Update titles, platforms, notes, and location assignments
 - **eBay workflow**: Mark items as listed
 
 ### API
@@ -118,10 +118,10 @@ curl "http://localhost:8000/api/search?q=zelda"
 # Get item details
 curl http://localhost:8000/api/items/123
 
-# Update item (e.g., reassign to different box)
+# Update item (e.g., reassign to different location)
 curl -X PATCH http://localhost:8000/api/items/123 \
   -H "Content-Type: application/json" \
-  -d '{"box_id": "BOX-5", "title_manual": "Legend of Zelda"}'
+  -d '{"location_id": "SHELF-A3", "title_manual": "Legend of Zelda"}'
 
 # Mark as listed on eBay
 curl -X PATCH http://localhost:8000/api/items/123/mark-listed

@@ -14,7 +14,7 @@ class SearchResult(BaseModel):
     """Response model for a search result."""
 
     item_id: int
-    box_id: str | None
+    location_id: str | None
     title_guess: str | None
     title_manual: str | None
     platform_guess: str | None
@@ -41,7 +41,7 @@ def search_items(
     q: Annotated[str, Query(min_length=1, description="Search query")],
     page: Annotated[int, Query(ge=1)] = 1,
     per_page: Annotated[int, Query(ge=1, le=100)] = 20,
-    box_id: str | None = None,
+    location_id: str | None = None,
     platform: str | None = None,
     completeness: str | None = None,
     ebay_listed: bool | None = None,
@@ -56,9 +56,9 @@ def search_items(
         search_term = f"%{q}%"
         params: list[str | int] = [search_term, search_term, search_term, search_term]
 
-        if box_id:
-            conditions.append("box_id = ?")
-            params.append(box_id)
+        if location_id:
+            conditions.append("location_id = ?")
+            params.append(location_id)
         if platform:
             conditions.append("(platform_guess = ? OR platform_manual = ?)")
             params.extend([platform, platform])
@@ -81,8 +81,8 @@ def search_items(
         # Get paginated results
         offset = (page - 1) * per_page
         sql = f"""
-            SELECT item_id, box_id, title_guess, title_manual, platform_guess, platform_manual,
-                   completeness, ebay_listed, needs_review, ocr_text_raw
+            SELECT item_id, location_id, title_guess, title_manual, platform_guess,
+                   platform_manual, completeness, ebay_listed, needs_review, ocr_text_raw
             FROM items{where_clause}
             ORDER BY
                 CASE
@@ -100,7 +100,7 @@ def search_items(
         results = [
             SearchResult(
                 item_id=row["item_id"],
-                box_id=row["box_id"],
+                location_id=row["location_id"],
                 title_guess=row["title_guess"],
                 title_manual=row["title_manual"],
                 platform_guess=row["platform_guess"],

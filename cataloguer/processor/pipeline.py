@@ -48,7 +48,7 @@ class ProcessingResult:
     image_type: ImageType | None = None
     items_created: int = 0
     error_message: str | None = None
-    box_id: str | None = None
+    location_id: str | None = None
 
 
 class ProcessingPipeline:
@@ -99,8 +99,8 @@ class ProcessingPipeline:
         self.thumbnail_size = thumbnail_size
 
         # State machine
-        self.current_box_id: str | None = None
-        self.unknown_box_counter: int = 0  # Counter for auto-generated UNKNOWN boxes
+        self.current_location_id: str | None = None
+        self.unknown_location_counter: int = 0  # Counter for auto-generated UNKNOWN locations
 
     def scan_directory(self, input_dir: Path) -> list[ImageFile]:
         """Scan input directory recursively for image files.
@@ -272,33 +272,33 @@ class ProcessingPipeline:
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
         """Handle a classified image based on its type."""
-        if classification.image_type == ImageType.BOX_DIVIDER:
-            return self._handle_box_divider(image_file, classification)
+        if classification.image_type == ImageType.LOCATION_DIVIDER:
+            return self._handle_location_divider(image_file, classification)
         elif classification.image_type == ImageType.BLACK_FRAME:
             return self._handle_black_frame(image_file)
         else:
             return self._handle_game_item(image_file, classification)
 
-    def _handle_box_divider(
+    def _handle_location_divider(
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
-        """Handle a box divider image."""
-        box_id = classification.box_id
-        if box_id:
-            self.current_box_id = box_id
-            self.db.create_box(box_id)
+        """Handle a location divider image."""
+        location_id = classification.location_id
+        if location_id:
+            self.current_location_id = location_id
+            self.db.create_location(location_id)
 
         return ProcessingResult(
             source_path=image_file.path,
             source_hash=image_file.file_hash,
             status="success",
-            image_type=ImageType.BOX_DIVIDER,
-            box_id=box_id,
+            image_type=ImageType.LOCATION_DIVIDER,
+            location_id=location_id,
         )
 
     def _handle_black_frame(self, image_file: ImageFile) -> ProcessingResult:
         """Handle a black frame (sequence ender)."""
-        self.current_box_id = None
+        self.current_location_id = None
         return ProcessingResult(
             source_path=image_file.path,
             source_hash=image_file.file_hash,
@@ -310,11 +310,13 @@ class ProcessingPipeline:
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
         """Handle a game item image."""
-        # If no active box, create an UNKNOWN box (missed divider recovery)
-        if self.current_box_id is None:
-            self.unknown_box_counter += 1
-            self.current_box_id = f"UNKNOWN-{self.unknown_box_counter}"
-            self.db.create_box(self.current_box_id, label="Auto-created (missing divider)")
+        # If no active location, create an UNKNOWN location (missed divider recovery)
+        if self.current_location_id is None:
+            self.unknown_location_counter += 1
+            self.current_location_id = f"UNKNOWN-{self.unknown_location_counter}"
+            self.db.create_location(
+                self.current_location_id, label="Auto-created (missing divider)"
+            )
 
         # Load the image
         image = self._load_image(image_file.path)
@@ -331,7 +333,7 @@ class ProcessingPipeline:
 
         # Create item record
         item = Item(
-            box_id=self.current_box_id,
+            location_id=self.current_location_id,
             source_camera=image_file.camera,
             source_filename=image_file.path.name,
             source_hash=image_file.file_hash,
@@ -362,7 +364,7 @@ class ProcessingPipeline:
             status="success",
             image_type=ImageType.GAME_ITEM,
             items_created=1,
-            box_id=self.current_box_id,
+            location_id=self.current_location_id,
         )
 
     def _load_image(self, path: Path) -> np.ndarray:
@@ -474,7 +476,9 @@ def process_collection(
         "skipped": sum(1 for r in results if r.status == "skipped"),
         "failed": sum(1 for r in results if r.status == "failed"),
         "items_created": sum(r.items_created for r in results),
-        "box_dividers": sum(1 for r in results if r.image_type == ImageType.BOX_DIVIDER),
+        "location_dividers": sum(
+            1 for r in results if r.image_type == ImageType.LOCATION_DIVIDER
+        ),
         "black_frames": sum(1 for r in results if r.image_type == ImageType.BLACK_FRAME),
         "game_items": sum(1 for r in results if r.image_type == ImageType.GAME_ITEM),
     }

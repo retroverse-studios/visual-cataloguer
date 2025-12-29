@@ -1,8 +1,8 @@
 """Image classification for the visual cataloguer pipeline.
 
 Classifies images into three types:
-- BOX_DIVIDER: QR code or text indicating a new box/section
-- BLACK_FRAME: Dark image signaling end of current box
+- LOCATION_DIVIDER: QR code or text indicating a new location/section
+- BLACK_FRAME: Dark image signaling end of current location
 - GAME_ITEM: Everything else (actual items to catalogue)
 """
 
@@ -37,7 +37,7 @@ RAW_EXTENSIONS: set[str] = {
 class ImageType(Enum):
     """Types of images in the cataloguing workflow."""
 
-    BOX_DIVIDER = "box_divider"
+    LOCATION_DIVIDER = "location_divider"
     BLACK_FRAME = "black_frame"
     GAME_ITEM = "game_item"
 
@@ -48,7 +48,7 @@ class ClassificationResult:
 
     image_type: ImageType
     confidence: float  # 0.0 - 1.0
-    box_id: str | None = None  # For BOX_DIVIDER type
+    location_id: str | None = None  # For LOCATION_DIVIDER type
     detection_method: str | None = None  # 'qr', 'ocr_printed', 'ocr_handwritten'
     raw_text: str | None = None  # Any text detected
     needs_review: bool = False
@@ -173,7 +173,7 @@ class ImageClassifier:
     def _detect_qr_code(self, image: np.ndarray) -> ClassificationResult | None:
         """Attempt to detect and decode a QR code using OpenCV.
 
-        Returns ClassificationResult if a valid box divider QR is found.
+        Returns ClassificationResult if a valid location divider QR is found.
         """
         detector = cv2.QRCodeDetector()
 
@@ -198,13 +198,13 @@ class ImageClassifier:
 
             if data:
                 data = data.strip()
-                # Check if it matches box pattern
-                box_id = self._extract_box_id(data)
-                if box_id:
+                # Check if it matches location pattern
+                location_id = self._extract_location_id(data)
+                if location_id:
                     return ClassificationResult(
-                        image_type=ImageType.BOX_DIVIDER,
+                        image_type=ImageType.LOCATION_DIVIDER,
                         confidence=1.0,
-                        box_id=box_id,
+                        location_id=location_id,
                         detection_method="qr",
                         raw_text=data,
                     )
@@ -212,9 +212,9 @@ class ImageClassifier:
         return None
 
     def _detect_text_divider(self, image: np.ndarray) -> ClassificationResult | None:
-        """Use OCR to detect text-based box dividers.
+        """Use OCR to detect text-based location dividers.
 
-        Tries to find BOX-X or similar patterns in large text.
+        Tries to find BOX-X, SHELF-X, or similar patterns in large text.
         """
         # Preprocess for OCR
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -253,10 +253,10 @@ class ImageClassifier:
         full_text = " ".join(t[0] for t in texts_with_conf)
         avg_confidence = sum(t[1] for t in texts_with_conf) / len(texts_with_conf)
 
-        # Try to extract box ID
-        box_id = self._extract_box_id(full_text)
+        # Try to extract location ID
+        location_id = self._extract_location_id(full_text)
 
-        if box_id:
+        if location_id:
             # Determine detection type based on confidence
             if avg_confidence >= self.ocr_high_confidence:
                 method = "ocr_printed"
@@ -272,9 +272,9 @@ class ImageClassifier:
                 return None
 
             return ClassificationResult(
-                image_type=ImageType.BOX_DIVIDER,
+                image_type=ImageType.LOCATION_DIVIDER,
                 confidence=confidence,
-                box_id=box_id,
+                location_id=location_id,
                 detection_method=method,
                 raw_text=full_text,
                 needs_review=needs_review,
@@ -283,12 +283,12 @@ class ImageClassifier:
 
         return None
 
-    def _extract_box_id(self, text: str) -> str | None:
-        """Extract a box identifier from text.
+    def _extract_location_id(self, text: str) -> str | None:
+        """Extract a location identifier from text.
 
         Recognizes patterns like:
         - BOX-1, BOX 1, BOX1
-        - SHELF-A3, GARAGE-2
+        - SHELF-A3, GARAGE-2, ROOM1-RACK2
         """
         # Try strict BOX pattern first
         match = self.BOX_PATTERN_STRICT.search(text)

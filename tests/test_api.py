@@ -31,25 +31,25 @@ def temp_db() -> Generator[Path, None, None]:
 
     # Add some test data
     db = Database(db_path)
-    db.create_box("BOX-1", "Test Box 1")
-    db.create_box("BOX-2", "Test Box 2")
+    db.create_location("BOX-1", "Test Box 1")
+    db.create_location("BOX-2", "Test Box 2")
 
     # Create test items
     item1 = Item(
-        box_id="BOX-1",
+        location_id="BOX-1",
         title_guess="Test Game 1",
         platform_guess="NES",
         completeness="boxed",
     )
     item2 = Item(
-        box_id="BOX-1",
+        location_id="BOX-1",
         title_guess="Test Game 2",
         platform_guess="SNES",
         completeness="loose",
         needs_review=True,
     )
     item3 = Item(
-        box_id="BOX-2",
+        location_id="BOX-2",
         title_guess="Test Game 3",
         platform_guess="NES",
         ebay_listed=True,
@@ -92,7 +92,7 @@ class TestStats:
         assert response.status_code == 200
         data = response.json()
         assert data["total_items"] == 3
-        assert data["total_boxes"] == 2
+        assert data["total_locations"] == 2
         assert data["needs_review"] == 1
         assert data["ebay_listed"] == 1
 
@@ -176,31 +176,31 @@ class TestItemsEndpoint:
         assert response.status_code == 404
 
 
-class TestBoxesEndpoint:
-    """Tests for boxes endpoints."""
+class TestLocationsEndpoint:
+    """Tests for locations endpoints."""
 
-    def test_list_boxes(self, client: TestClient) -> None:
-        """Test listing all boxes."""
-        response = client.get("/api/boxes")
+    def test_list_locations(self, client: TestClient) -> None:
+        """Test listing all locations."""
+        response = client.get("/api/locations")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] == 2
-        assert len(data["boxes"]) == 2
+        assert len(data["locations"]) == 2
 
-    def test_get_box(self, client: TestClient) -> None:
-        """Test getting a single box."""
-        response = client.get("/api/boxes/BOX-1")
+    def test_get_location(self, client: TestClient) -> None:
+        """Test getting a single location."""
+        response = client.get("/api/locations/BOX-1")
         assert response.status_code == 200
         data = response.json()
-        assert data["box_id"] == "BOX-1"
+        assert data["location_id"] == "BOX-1"
         assert data["item_count"] == 2
 
-    def test_get_box_items(self, client: TestClient) -> None:
-        """Test getting items in a box."""
-        response = client.get("/api/boxes/BOX-1/items")
+    def test_get_location_items(self, client: TestClient) -> None:
+        """Test getting items in a location."""
+        response = client.get("/api/locations/BOX-1/items")
         assert response.status_code == 200
         data = response.json()
-        assert data["box_id"] == "BOX-1"
+        assert data["location_id"] == "BOX-1"
         assert data["total"] == 2
         assert len(data["items"]) == 2
 

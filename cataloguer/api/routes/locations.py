@@ -1,4 +1,4 @@
-"""Box routes for the API."""
+"""Location routes for the API."""
 
 from typing import Annotated
 
@@ -10,25 +10,25 @@ from cataloguer.api.deps import DbDep
 router = APIRouter()
 
 
-class BoxResponse(BaseModel):
-    """Response model for a box."""
+class LocationResponse(BaseModel):
+    """Response model for a location."""
 
-    box_id: str
+    location_id: str
     label: str | None
     notes: str | None
     created_at: str | None
     item_count: int
 
 
-class BoxListResponse(BaseModel):
-    """Response model for box list."""
+class LocationListResponse(BaseModel):
+    """Response model for location list."""
 
-    boxes: list[BoxResponse]
+    locations: list[LocationResponse]
     total: int
 
 
-class BoxItemResponse(BaseModel):
-    """Simplified item response for box listings."""
+class LocationItemResponse(BaseModel):
+    """Simplified item response for location listings."""
 
     item_id: int
     title_guess: str | None
@@ -40,33 +40,34 @@ class BoxItemResponse(BaseModel):
     needs_review: bool
 
 
-class BoxItemsResponse(BaseModel):
-    """Response model for items in a box."""
+class LocationItemsResponse(BaseModel):
+    """Response model for items in a location."""
 
-    box_id: str
-    items: list[BoxItemResponse]
+    location_id: str
+    items: list[LocationItemResponse]
     total: int
     page: int
     per_page: int
 
 
-@router.get("", response_model=BoxListResponse)
-def list_boxes(db: DbDep) -> BoxListResponse:
-    """List all boxes with item counts."""
+@router.get("", response_model=LocationListResponse)
+def list_locations(db: DbDep) -> LocationListResponse:
+    """List all locations with item counts."""
     with db.connection() as conn:
         rows = conn.execute(
             """
-            SELECT b.box_id, b.label, b.notes, b.created_at, COUNT(i.item_id) as item_count
-            FROM boxes b
-            LEFT JOIN items i ON b.box_id = i.box_id
-            GROUP BY b.box_id
-            ORDER BY b.box_id
+            SELECT l.location_id, l.label, l.notes, l.created_at,
+                   COUNT(i.item_id) as item_count
+            FROM locations l
+            LEFT JOIN items i ON l.location_id = i.location_id
+            GROUP BY l.location_id
+            ORDER BY l.location_id
             """
         ).fetchall()
 
-        boxes = [
-            BoxResponse(
-                box_id=row["box_id"],
+        locations = [
+            LocationResponse(
+                location_id=row["location_id"],
                 label=row["label"],
                 notes=row["notes"],
                 created_at=str(row["created_at"]) if row["created_at"] else None,
@@ -75,29 +76,30 @@ def list_boxes(db: DbDep) -> BoxListResponse:
             for row in rows
         ]
 
-        return BoxListResponse(boxes=boxes, total=len(boxes))
+        return LocationListResponse(locations=locations, total=len(locations))
 
 
-@router.get("/{box_id}", response_model=BoxResponse)
-def get_box(box_id: str, db: DbDep) -> BoxResponse:
-    """Get a single box by ID."""
+@router.get("/{location_id}", response_model=LocationResponse)
+def get_location(location_id: str, db: DbDep) -> LocationResponse:
+    """Get a single location by ID."""
     with db.connection() as conn:
         row = conn.execute(
             """
-            SELECT b.box_id, b.label, b.notes, b.created_at, COUNT(i.item_id) as item_count
-            FROM boxes b
-            LEFT JOIN items i ON b.box_id = i.box_id
-            WHERE b.box_id = ?
-            GROUP BY b.box_id
+            SELECT l.location_id, l.label, l.notes, l.created_at,
+                   COUNT(i.item_id) as item_count
+            FROM locations l
+            LEFT JOIN items i ON l.location_id = i.location_id
+            WHERE l.location_id = ?
+            GROUP BY l.location_id
             """,
-            (box_id,),
+            (location_id,),
         ).fetchone()
 
         if not row:
-            raise HTTPException(status_code=404, detail="Box not found")
+            raise HTTPException(status_code=404, detail="Location not found")
 
-        return BoxResponse(
-            box_id=row["box_id"],
+        return LocationResponse(
+            location_id=row["location_id"],
             label=row["label"],
             notes=row["notes"],
             created_at=str(row["created_at"]) if row["created_at"] else None,
@@ -105,26 +107,26 @@ def get_box(box_id: str, db: DbDep) -> BoxResponse:
         )
 
 
-@router.get("/{box_id}/items", response_model=BoxItemsResponse)
-def get_box_items(
-    box_id: str,
+@router.get("/{location_id}/items", response_model=LocationItemsResponse)
+def get_location_items(
+    location_id: str,
     db: DbDep,
     page: Annotated[int, Query(ge=1)] = 1,
     per_page: Annotated[int, Query(ge=1, le=100)] = 20,
-) -> BoxItemsResponse:
-    """Get items in a specific box."""
+) -> LocationItemsResponse:
+    """Get items in a specific location."""
     with db.connection() as conn:
-        # Check box exists
-        box = conn.execute(
-            "SELECT box_id FROM boxes WHERE box_id = ?", (box_id,)
+        # Check location exists
+        location = conn.execute(
+            "SELECT location_id FROM locations WHERE location_id = ?", (location_id,)
         ).fetchone()
 
-        if not box:
-            raise HTTPException(status_code=404, detail="Box not found")
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
 
         # Get total count
         total = conn.execute(
-            "SELECT COUNT(*) FROM items WHERE box_id = ?", (box_id,)
+            "SELECT COUNT(*) FROM items WHERE location_id = ?", (location_id,)
         ).fetchone()[0]
 
         # Get paginated items
@@ -134,15 +136,15 @@ def get_box_items(
             SELECT item_id, title_guess, title_manual, platform_guess, platform_manual,
                    completeness, ebay_listed, needs_review
             FROM items
-            WHERE box_id = ?
+            WHERE location_id = ?
             ORDER BY item_id
             LIMIT ? OFFSET ?
             """,
-            (box_id, per_page, offset),
+            (location_id, per_page, offset),
         ).fetchall()
 
         items = [
-            BoxItemResponse(
+            LocationItemResponse(
                 item_id=row["item_id"],
                 title_guess=row["title_guess"],
                 title_manual=row["title_manual"],
@@ -155,8 +157,8 @@ def get_box_items(
             for row in rows
         ]
 
-        return BoxItemsResponse(
-            box_id=box_id,
+        return LocationItemsResponse(
+            location_id=location_id,
             items=items,
             total=total,
             page=page,

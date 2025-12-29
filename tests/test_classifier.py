@@ -16,15 +16,15 @@ def classifier() -> ImageClassifier:
     return ImageClassifier()
 
 
-class TestBoxDividerDetection:
-    """Tests for box divider detection (QR code and OCR)."""
+class TestLocationDividerDetection:
+    """Tests for location divider detection (QR code and OCR)."""
 
     def test_detect_qr_code_divider(self, classifier: ImageClassifier) -> None:
-        """Test detection of box divider with QR code."""
+        """Test detection of location divider with QR code."""
         result = classifier.classify_file(FIXTURES_DIR / "divider.jpg")
 
-        assert result.image_type == ImageType.BOX_DIVIDER
-        assert result.box_id == "BOX-1"
+        assert result.image_type == ImageType.LOCATION_DIVIDER
+        assert result.location_id == "BOX-1"
         assert result.detection_method == "qr"
         assert result.confidence == 1.0
 
