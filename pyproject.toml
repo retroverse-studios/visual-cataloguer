@@ -1,6 +1,6 @@
 [project]
 name = "visual-cataloguer"
-version = "0.2.0"
+version = "0.2.1"
 description = "Batch catalogue physical collections using visual dividers (QR codes) and automated image processing"
 readme = "README.md"
 license = {text = "MIT"}
