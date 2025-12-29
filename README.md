@@ -45,7 +45,7 @@ You have thousands of items (retro games, books, vinyl, tools) in boxes. You nee
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/visual-cataloguer.git
+git clone https://github.com/retroverse-studios/visual-cataloguer.git
 cd visual-cataloguer
 uv sync
 ```
