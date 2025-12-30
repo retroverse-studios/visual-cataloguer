@@ -43,6 +43,7 @@ class ItemResponse(BaseModel):
     brand: str | None
     region: str | None
     year: str | None
+    condition_notes: str | None
 
 
 class ItemListResponse(BaseModel):
@@ -98,6 +99,7 @@ def row_to_item(row: dict[str, Any]) -> ItemResponse:
         brand=row["brand"],
         region=row["region"],
         year=row["year"],
+        condition_notes=row["condition_notes"],
     )
 
 
@@ -398,6 +400,7 @@ def reidentify_item(
         region=result.region,
         year=result.year,
         completeness=completeness,
+        condition_notes=result.condition_notes,
         ai_identified=True,
         ai_description=json.dumps(result.raw_response),
     )

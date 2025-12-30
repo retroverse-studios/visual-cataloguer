@@ -58,6 +58,7 @@ class Item:
     region: str | None = None  # NTSC-U, PAL, NTSC-J
     year: str | None = None  # Release year
     language: str = "en"  # 'en', 'jp', 'foreign', 'unknown'
+    condition_notes: str | None = None  # AI notes on physical condition
 
     # Manual overrides
     title_manual: str | None = None
@@ -150,6 +151,7 @@ CREATE TABLE IF NOT EXISTS items (
     region          TEXT,
     year            TEXT,
     language        TEXT DEFAULT 'en',
+    condition_notes TEXT,
 
     -- Manual overrides
     title_manual    TEXT,
@@ -318,9 +320,9 @@ class Database:
                     item_type, ai_description, ai_identified,
                     object_count, completeness,
                     ocr_text_raw, title_guess, title_confidence, platform_guess,
-                    brand, region, year, language,
+                    brand, region, year, language, condition_notes,
                     needs_review, review_reason, phash, ebay_listed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.location_id,
@@ -344,6 +346,7 @@ class Database:
                     item.region,
                     item.year,
                     item.language,
+                    item.condition_notes,
                     item.needs_review,
                     item.review_reason,
                     item.phash,
@@ -432,6 +435,7 @@ class Database:
                 region=row["region"],
                 year=row["year"],
                 language=row["language"] or "en",
+                condition_notes=row["condition_notes"],
                 title_manual=row["title_manual"],
                 platform_manual=row["platform_manual"],
                 notes=row["notes"],
@@ -452,9 +456,9 @@ class Database:
         # Build dynamic UPDATE query
         valid_fields = {
             "location_id", "item_type", "completeness", "title_guess", "title_confidence",
-            "platform_guess", "brand", "region", "year", "language", "title_manual",
-            "platform_manual", "notes", "ebay_listed", "ebay_listing_id", "needs_review",
-            "review_reason", "ai_description", "ai_identified", "ocr_text_raw",
+            "platform_guess", "brand", "region", "year", "language", "condition_notes",
+            "title_manual", "platform_manual", "notes", "ebay_listed", "ebay_listing_id",
+            "needs_review", "review_reason", "ai_description", "ai_identified", "ocr_text_raw",
         }
 
         # Filter to only valid fields

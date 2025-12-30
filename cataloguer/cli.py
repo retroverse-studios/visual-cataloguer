@@ -516,6 +516,10 @@ def show(item_id: int, database: Path, as_json: bool) -> None:
     if item.language and item.language != "en":
         console.print(f"[bold]Language:[/bold] {item.language}")
 
+    # Condition notes from AI
+    if item.condition_notes:
+        console.print(f"\n[bold]Condition Notes:[/bold] {item.condition_notes}")
+
     # Location
     console.print(f"\n[bold]Location:[/bold] {item.location_id or 'UNASSIGNED'}")
 
@@ -747,6 +751,8 @@ def reidentify(
     console.print(f"  Region: {result.region or 'Unknown'}")
     console.print(f"  Completeness: {result.completeness or 'unknown'}")
     console.print(f"  Confidence: {result.confidence or 'unknown'}")
+    if result.condition_notes:
+        console.print(f"  Condition Notes: {result.condition_notes}")
 
     # Update item
     import json
@@ -758,6 +764,7 @@ def reidentify(
         "brand": result.brand,
         "region": result.region,
         "year": result.year,
+        "condition_notes": result.condition_notes,
         "ai_identified": True,
         "ai_description": json.dumps(result.raw_response),
     }

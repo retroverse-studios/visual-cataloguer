@@ -467,6 +467,7 @@ class ProcessingPipeline:
         brand = None
         region = None
         year = None
+        condition_notes = None
         ai_description = None
         ai_identified = False
         needs_review = classification.needs_review
@@ -499,6 +500,9 @@ class ProcessingPipeline:
             if ai_result.year:
                 year = ai_result.year
 
+            if ai_result.condition_notes:
+                condition_notes = ai_result.condition_notes
+
             # Flag low-confidence AI results for review
             if ai_result.confidence == "low":
                 needs_review = True
@@ -524,6 +528,7 @@ class ProcessingPipeline:
             brand=brand,
             region=region,
             year=year,
+            condition_notes=condition_notes,
             needs_review=needs_review,
             review_reason=review_reason,
         )

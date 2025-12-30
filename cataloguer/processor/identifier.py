@@ -43,6 +43,7 @@ class IdentificationResult:
     condition: str | None  # mint, good, fair, poor
     completeness: str | None  # For games: loose, boxed, complete, sealed
     year: str | None  # Release year if identifiable
+    condition_notes: str | None  # Specific notes about physical condition
     description: str  # Full description from LLM
     confidence: str | None  # high, medium, low
     raw_response: dict[str, Any]  # Full JSON response for debugging
@@ -68,13 +69,14 @@ Respond with JSON in this exact format:
   "condition": "mint, good, fair, poor, or null if can't determine",
   "completeness": "For games: loose, boxed, complete, sealed. Null for other items",
   "year": "Release year if identifiable, null otherwise",
-  "description": "Detailed description of what you see, including any visible text, condition notes, and identifying features",
+  "condition_notes": "Specific observations about physical condition: scratches, wear, tears, fading, stickers, missing parts, etc. Null if item appears pristine or condition cannot be assessed",
+  "description": "Brief description of what you see and any identifying features",
   "confidence": "high, medium, or low - how confident are you in this identification"
 }
 
 Important:
 - For stylized game logos, try to identify the title even if text is decorative
-- Note any visible damage, wear, or missing components
+- Be specific in condition_notes about any visible damage, wear, or issues
 - If you can identify the specific variant or edition, mention it
 - For Japanese items, provide both Japanese and English names if known
 - Be specific about what you can and cannot determine
@@ -251,6 +253,7 @@ class ItemIdentifier:
                 condition=None,
                 completeness=None,
                 year=None,
+                condition_notes=None,
                 description=response_text,
                 confidence="low",
                 raw_response={"error": "Failed to parse JSON", "raw": response_text},
@@ -272,6 +275,7 @@ class ItemIdentifier:
             condition=data.get("condition"),
             completeness=data.get("completeness"),
             year=data.get("year"),
+            condition_notes=data.get("condition_notes"),
             description=data.get("description", ""),
             confidence=data.get("confidence"),
             raw_response=data,
