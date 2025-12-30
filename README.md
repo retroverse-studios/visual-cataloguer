@@ -4,14 +4,107 @@ Batch catalogue physical collections using visual dividers (QR codes) and automa
 
 ## The Problem
 
-You have thousands of items (retro games, books, vinyl, tools) in boxes. You need them in a searchable database. Manual entry would take weeks.
+You have thousands of items (retro games, books, vinyl, trading cards) stored in boxes. You need them in a searchable database so you can find things and list them on eBay. Manual entry would take weeks.
 
 ## The Solution
 
-1. Print QR code dividers (one per location/box/shelf)
-2. Photograph: `divider → items → items → black frame → divider → ...`
-3. Run `viscatalog process ./photos`
-4. Browse your collection via web UI or CLI
+1. Print QR code dividers (one per storage location)
+2. Photograph items one at a time, using dividers to mark location changes
+3. Run `viscatalog process ./photos --ai-identify`
+4. Search and browse your collection via CLI or web UI
+
+## Scope & Philosophy
+
+**This tool does one thing well:** Process a folder of photographs into a searchable inventory database.
+
+**What it handles:**
+- One item per photograph (a "complete in box" game with box + manual + cartridge counts as one item)
+- QR code dividers to track storage locations (BOX-1, SHELF-A3, etc.)
+- Black frame images to end location sequences
+- AI identification of items (title, platform, condition, completeness)
+- Reference-quality images for verification (not eBay listing photos)
+
+**What it doesn't do:**
+- Multi-item segmentation (photographing 5 cartridges and splitting them)
+- Image preprocessing (rotation, cropping, alignment)
+- eBay-ready photo processing
+
+The images stored are for *verifying the database is correct*, not for direct use in listings. When you're ready to list an item, you'll retrieve it from storage and take proper detailed photos.
+
+## Workflow
+
+### 1. Prepare Dividers
+
+Print QR codes for each storage location:
+```
+BOX-1    BOX-2    SHELF-A1    GARAGE-BIN-3
+```
+
+You'll also need a way to create "black frames" - lens cap on, or photograph a black surface.
+
+### 2. Photograph Your Collection
+
+```
+[QR: BOX-1] → [Item] → [Item] → [Item] → [BLACK] → [QR: BOX-2] → [Item] → ...
+```
+
+**Rules:**
+- One item per photo
+- Complete sets (box + game + manual) in one photo = one item
+- QR code starts a new location
+- Black frame ends the current location (optional, but helps with organization)
+- Multiple cameras OK - images merge by EXIF timestamp
+
+### 3. Process Images
+
+```bash
+# Basic processing (OCR only)
+viscatalog process ./photos
+
+# With AI identification (recommended)
+viscatalog process ./photos --ai-identify
+
+# AI for items that OCR can't read (stylized logos, Japanese text)
+viscatalog process ./photos --ai-fallback
+
+# Use Ollama instead of Claude
+viscatalog process ./photos --ai-identify --ai-provider ollama
+```
+
+### 4. Review & Correct
+
+```bash
+# View stats
+viscatalog stats
+
+# List items needing review
+viscatalog list --unknown           # No title identified
+viscatalog list --low-confidence    # AI uncertain
+viscatalog list --needs-review      # Flagged for review
+
+# View item details
+viscatalog show 42
+
+# Manually correct
+viscatalog edit 42 --title "Super Mario Bros." --platform NES
+
+# Re-run AI identification
+viscatalog reidentify 42 --provider claude
+```
+
+### 5. Browse & Search
+
+```bash
+# Search
+viscatalog search "zelda"
+
+# List by location
+viscatalog list --location BOX-1
+
+# Web interface
+viscatalog serve --port 8000
+# Open http://localhost:8000
+```
 
 ## How It Works
 
@@ -24,25 +117,45 @@ You have thousands of items (retro games, books, vinyl, tools) in boxes. You nee
            ┌───────────────┼───────────────┐
            ▼               ▼               ▼
      ┌──────────┐    ┌──────────┐    ┌──────────┐
-     │ LOCATION │    │  BLACK   │    │   GAME   │
-     │ DIVIDER  │    │  FRAME   │    │   ITEM   │
+     │ LOCATION │    │  BLACK   │    │   ITEM   │
+     │ DIVIDER  │    │  FRAME   │    │          │
      └──────────┘    └──────────┘    └──────────┘
+          │               │               │
+          ▼               ▼               ▼
+     Set current     Clear current    AI/OCR identify
+     location        location         Store in DB
 ```
 
-- **Location Divider**: QR code or text (e.g., "BOX-1", "SHELF-A3") - starts a new location
-- **Black Frame**: Dark image - ends current location
-- **Game Item**: Everything else - catalogued with OCR
+## AI Identification
+
+When enabled (`--ai-identify` or `--ai-fallback`), the tool uses vision AI to extract:
+
+| Field | Example |
+|-------|---------|
+| Title | "Super Mario Bros. 3" |
+| Platform | "NES" |
+| Item Type | game, console, controller, book, vinyl, etc. |
+| Completeness | loose, boxed, complete_set, sealed |
+| Brand | "Nintendo" |
+| Region | NTSC-U, PAL, NTSC-J |
+| Year | "1990" |
+| Condition | mint, good, fair, poor |
+| Condition Notes | "Box has shelf wear on corners, manual has light creasing" |
+
+Supports:
+- **Claude** (default) - requires `ANTHROPIC_API_KEY` environment variable
+- **Ollama** - local, free, use `--ai-provider ollama`
 
 ## Features
 
-- Merges photos from multiple cameras by EXIF timestamp
-- QR code detection (OpenCV) + OCR fallback (Tesseract)
-- RAW file support (.ARW Sony files via rawpy)
-- SQLite database with JPEG BLOBs (single portable file)
-- SHA256 deduplication for resume capability
-- **Web interface** for browsing, searching, and editing
-- Mobile-friendly UI (works on iPad/phone)
-- Robust error recovery (auto-creates UNKNOWN boxes for missed dividers)
+- **Multi-camera support**: Merges photos from multiple cameras by EXIF timestamp
+- **RAW file support**: Sony ARW, Canon CR2/CR3, Nikon NEF, and more via rawpy
+- **QR code detection**: OpenCV-based with OCR fallback
+- **SQLite database**: Single portable file with images stored as BLOBs
+- **Resume capability**: SHA256 deduplication skips already-processed files
+- **Web interface**: Browse, search, edit, and manage your collection
+- **REST API**: Integrate with other tools
+- **Duplicate divider handling**: Multiple QR codes or black frames in a row are handled gracefully
 
 ## Installation
 
@@ -50,91 +163,80 @@ You have thousands of items (retro games, books, vinyl, tools) in boxes. You nee
 # From PyPI
 pip install visual-cataloguer
 
-# With web interface support
+# With web interface
 pip install visual-cataloguer[web]
 
-# Or clone and install
-git clone https://github.com/retroverse-studios/visual-cataloguer.git
-cd visual-cataloguer
-uv sync --extra web
+# Or with uv
+uv pip install visual-cataloguer[web]
 ```
 
 **System dependencies:**
-- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) - `brew install tesseract`
+- [Tesseract OCR](https://github.com/tesseract-ocr/tesseract): `brew install tesseract` (macOS) or `apt install tesseract-ocr` (Linux)
 
-## Usage
+**For AI identification:**
+- Claude: Set `ANTHROPIC_API_KEY` environment variable
+- Ollama: Install from [ollama.ai](https://ollama.ai) and run `ollama pull llava`
 
-### Process Images
-
-```bash
-# Process all images in a directory (scans recursively)
-viscatalog process -i ./photos -d ./collection.db
-
-# Works with any folder structure:
-#   ./photos/
-#   ├── camera1/         (RAW files)
-#   ├── camera2/         (JPEGs)
-#   └── day2/
-#       ├── alice/       (mixed formats)
-#       └── bob/
-
-# View statistics
-viscatalog stats -d ./collection.db
-
-# List locations
-viscatalog list --locations -d ./collection.db
-
-# Search items
-viscatalog search "zelda" -d ./collection.db
-```
-
-### Web Interface
+## CLI Reference
 
 ```bash
-# Start the web server
-viscatalog serve -d ./collection.db --port 8000
+# Processing
+viscatalog process <input-dir> [--ai-identify] [--ai-fallback] [--ai-provider claude|ollama]
 
-# Then open http://localhost:8000
+# Viewing
+viscatalog stats
+viscatalog list [--location LOC] [--platform PLAT] [--unknown] [--low-confidence] [--needs-review]
+viscatalog search <query>
+viscatalog show <item-id> [--json]
+
+# Editing
+viscatalog edit <item-id> [--title T] [--platform P] [--completeness C] [--notes N]
+viscatalog reidentify <item-id> [--provider P] [--model M] [--image PATH]
+viscatalog review <item-id> [--done | --flag --reason R]
+
+# Web server
+viscatalog serve [--port 8000] [--host 0.0.0.0]
 ```
 
-The web interface provides:
-- **Browse**: Grid view of all items with thumbnails
-- **Search**: Full-text search across titles and OCR text
-- **Filter**: By location, platform, completeness, listed/unlisted status
-- **Edit**: Update titles, platforms, notes, and location assignments
-- **eBay workflow**: Mark items as listed
-
-### API
-
-The web server exposes a REST API:
+## API Endpoints
 
 ```bash
-# List items
-curl http://localhost:8000/api/items
+# Items
+GET    /api/items                    # List items (with filters)
+GET    /api/items/{id}               # Get item
+PATCH  /api/items/{id}               # Update item
+DELETE /api/items/{id}               # Delete item
+POST   /api/items/{id}/reidentify    # Re-run AI identification
 
-# Search
-curl "http://localhost:8000/api/search?q=zelda"
+# Images
+GET    /api/items/{id}/images        # List item images
+GET    /api/items/{id}/image/thumb   # Get thumbnail
+GET    /api/items/{id}/image/full    # Get full image
+POST   /api/items/{id}/images        # Upload image
 
-# Get item details
-curl http://localhost:8000/api/items/123
-
-# Update item (e.g., reassign to different location)
-curl -X PATCH http://localhost:8000/api/items/123 \
-  -H "Content-Type: application/json" \
-  -d '{"location_id": "SHELF-A3", "title_manual": "Legend of Zelda"}'
-
-# Mark as listed on eBay
-curl -X PATCH http://localhost:8000/api/items/123/mark-listed
-
-# Get stats
-curl http://localhost:8000/api/stats
+# Other
+GET    /api/locations                # List locations
+GET    /api/search?q=query           # Search items
+GET    /api/stats                    # Collection statistics
 ```
 
-Full API docs at `http://localhost:8000/docs`
+Full OpenAPI docs at `http://localhost:8000/docs`
+
+## Database Schema
+
+SQLite database with tables:
+- `items` - Catalogued items with metadata
+- `item_images` - Images stored as JPEG BLOBs (one-to-many with items)
+- `locations` - Storage locations (BOX-1, SHELF-A3, etc.)
+- `processing_log` - Tracks processed files for resume
 
 ## Development
 
 ```bash
+git clone https://github.com/retroverse-studios/visual-cataloguer.git
+cd visual-cataloguer
+uv sync --extra web --extra dev
+
 # Run tests
 uv run pytest
 
