@@ -163,6 +163,38 @@ Important:
 Respond ONLY with the JSON object."""
 
 
+def check_ollama_available(host: str = "http://localhost:11434") -> bool:
+    """Check if Ollama is running and available."""
+    try:
+        response = httpx.get(f"{host}/api/tags", timeout=2.0)
+        return response.status_code == 200
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return False
+
+
+def check_claude_available() -> bool:
+    """Check if Claude API key is available."""
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def detect_provider(ollama_host: str = "http://localhost:11434") -> str | None:
+    """Auto-detect the best available AI provider.
+
+    Priority:
+    1. Ollama (free, local) if running
+    2. Claude if ANTHROPIC_API_KEY is set
+    3. None if no provider available
+
+    Returns:
+        Provider name ("ollama" or "claude") or None
+    """
+    if check_ollama_available(ollama_host):
+        return "ollama"
+    if check_claude_available():
+        return "claude"
+    return None
+
+
 class ItemIdentifier:
     """Identifies collectible items using vision LLMs."""
 

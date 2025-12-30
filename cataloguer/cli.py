@@ -57,9 +57,9 @@ def main() -> None:
 )
 @click.option(
     "--provider",
-    type=click.Choice(["claude", "ollama"]),
-    default="ollama",
-    help="AI provider (default: ollama - free and local)",
+    type=click.Choice(["auto", "claude", "ollama"]),
+    default="auto",
+    help="AI provider: auto (detect), ollama (free/local), or claude",
 )
 @click.option(
     "--model",
@@ -86,7 +86,7 @@ def process(
 ) -> None:
     """Process images from input directory (including subdirectories).
 
-    By default, uses AI (Ollama) for classification and identification.
+    By default, auto-detects the best AI provider (Ollama first, then Claude).
     Use --offline for QR/OCR-only mode without AI.
     """
     console.print(f"[bold]Visual Cataloguer v{__version__}[/bold]")
@@ -95,15 +95,28 @@ def process(
     # Initialize identifier if not in offline mode
     identifier = None
     if not offline:
-        from cataloguer.processor.identifier import ItemIdentifier
+        from cataloguer.processor.identifier import ItemIdentifier, detect_provider
 
-        try:
-            identifier = ItemIdentifier(provider=provider, model=model)
-            console.print(f"  AI: {provider} ({identifier.model})")
-        except ValueError as e:
-            console.print(f"[red]AI setup failed: {e}[/red]")
-            console.print("[yellow]Falling back to offline mode[/yellow]")
-            offline = True
+        # Auto-detect provider if needed
+        actual_provider = provider
+        if provider == "auto":
+            console.print("  Detecting AI provider...")
+            actual_provider = detect_provider()
+            if actual_provider:
+                console.print(f"  Found: {actual_provider}")
+            else:
+                console.print("[yellow]  No AI provider available[/yellow]")
+                console.print("[yellow]  Install Ollama or set ANTHROPIC_API_KEY[/yellow]")
+                offline = True
+
+        if not offline:
+            try:
+                identifier = ItemIdentifier(provider=actual_provider, model=model)
+                console.print(f"  AI: {actual_provider} ({identifier.model})")
+            except ValueError as e:
+                console.print(f"[red]AI setup failed: {e}[/red]")
+                console.print("[yellow]Falling back to offline mode[/yellow]")
+                offline = True
 
     if offline:
         console.print("  Mode: offline (QR/OCR only)")

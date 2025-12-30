@@ -62,10 +62,11 @@ Write the location ID on white paper. When AI mode is enabled, the tool will rea
 ### 3. Process Images
 
 ```bash
-# Default: AI-powered processing with Ollama (free, local)
+# Default: Auto-detects AI (tries Ollama first, then Claude)
 viscatalog process ./photos
 
-# Use Claude for better accuracy (requires ANTHROPIC_API_KEY)
+# Force a specific provider
+viscatalog process ./photos --provider ollama
 viscatalog process ./photos --provider claude
 
 # Offline mode: QR/OCR only, no AI
@@ -74,6 +75,8 @@ viscatalog process ./photos --offline
 # Use a specific model
 viscatalog process ./photos --provider ollama --model llava:13b
 ```
+
+The tool auto-detects available AI providers: Ollama (free, local) is preferred, with Claude as fallback if `ANTHROPIC_API_KEY` is set.
 
 ### 4. Review & Correct
 
@@ -186,8 +189,8 @@ uv pip install visual-cataloguer[web]
 ## CLI Reference
 
 ```bash
-# Processing (AI-first by default)
-viscatalog process <input-dir> [--provider ollama|claude] [--model MODEL] [--offline]
+# Processing (auto-detects AI provider)
+viscatalog process <input-dir> [--provider auto|ollama|claude] [--model MODEL] [--offline]
 
 # Viewing
 viscatalog stats

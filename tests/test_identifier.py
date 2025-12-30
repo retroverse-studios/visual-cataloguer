@@ -12,6 +12,9 @@ from cataloguer.processor.identifier import (
     ItemIdentifier,
     ItemType,
     UnifiedResult,
+    check_claude_available,
+    check_ollama_available,
+    detect_provider,
 )
 
 
@@ -466,3 +469,79 @@ class TestClassifyAndIdentify:
         result = identifier.classify_and_identify(b"fake_image_data")
 
         assert result.image_type == "black_frame"
+
+
+class TestProviderDetection:
+    """Tests for AI provider auto-detection."""
+
+    @patch("httpx.get")
+    def test_check_ollama_available_success(self, mock_get: MagicMock) -> None:
+        """Test Ollama availability check when running."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+
+        assert check_ollama_available() is True
+        mock_get.assert_called_once()
+
+    @patch("httpx.get")
+    def test_check_ollama_available_not_running(self, mock_get: MagicMock) -> None:
+        """Test Ollama availability check when not running."""
+        import httpx
+
+        mock_get.side_effect = httpx.ConnectError("Connection refused")
+
+        assert check_ollama_available() is False
+
+    @patch("httpx.get")
+    def test_check_ollama_available_timeout(self, mock_get: MagicMock) -> None:
+        """Test Ollama availability check on timeout."""
+        import httpx
+
+        mock_get.side_effect = httpx.TimeoutException("Timeout")
+
+        assert check_ollama_available() is False
+
+    def test_check_claude_available_with_key(self) -> None:
+        """Test Claude availability with API key set."""
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}):
+            assert check_claude_available() is True
+
+    def test_check_claude_available_without_key(self) -> None:
+        """Test Claude availability without API key."""
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("os.environ.get", return_value=None):
+                assert check_claude_available() is False
+
+    @patch("cataloguer.processor.identifier.check_ollama_available")
+    @patch("cataloguer.processor.identifier.check_claude_available")
+    def test_detect_provider_ollama_first(
+        self, mock_claude: MagicMock, mock_ollama: MagicMock
+    ) -> None:
+        """Test that Ollama is preferred over Claude."""
+        mock_ollama.return_value = True
+        mock_claude.return_value = True
+
+        assert detect_provider() == "ollama"
+
+    @patch("cataloguer.processor.identifier.check_ollama_available")
+    @patch("cataloguer.processor.identifier.check_claude_available")
+    def test_detect_provider_claude_fallback(
+        self, mock_claude: MagicMock, mock_ollama: MagicMock
+    ) -> None:
+        """Test Claude fallback when Ollama unavailable."""
+        mock_ollama.return_value = False
+        mock_claude.return_value = True
+
+        assert detect_provider() == "claude"
+
+    @patch("cataloguer.processor.identifier.check_ollama_available")
+    @patch("cataloguer.processor.identifier.check_claude_available")
+    def test_detect_provider_none_available(
+        self, mock_claude: MagicMock, mock_ollama: MagicMock
+    ) -> None:
+        """Test None returned when no provider available."""
+        mock_ollama.return_value = False
+        mock_claude.return_value = False
+
+        assert detect_provider() is None
