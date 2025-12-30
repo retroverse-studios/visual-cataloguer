@@ -7,9 +7,11 @@ import pytest
 
 from cataloguer.processor.identifier import (
     IDENTIFICATION_PROMPT,
+    UNIFIED_PROMPT,
     IdentificationResult,
     ItemIdentifier,
     ItemType,
+    UnifiedResult,
 )
 
 
@@ -259,3 +261,208 @@ class TestIdentificationPrompt:
         assert "controller" in IDENTIFICATION_PROMPT.lower()
         assert "book" in IDENTIFICATION_PROMPT.lower()
         assert "vinyl" in IDENTIFICATION_PROMPT.lower()
+
+
+class TestUnifiedResult:
+    """Tests for UnifiedResult dataclass."""
+
+    def test_unified_result_divider(self) -> None:
+        """Test creating a divider result."""
+        result = UnifiedResult(image_type="divider", location_id="BOX-1")
+        assert result.image_type == "divider"
+        assert result.location_id == "BOX-1"
+        assert result.item_type is None
+
+    def test_unified_result_black_frame(self) -> None:
+        """Test creating a black frame result."""
+        result = UnifiedResult(image_type="black_frame")
+        assert result.image_type == "black_frame"
+        assert result.location_id is None
+
+    def test_unified_result_item(self) -> None:
+        """Test creating an item result."""
+        result = UnifiedResult(
+            image_type="item",
+            item_type=ItemType.GAME,
+            title="Super Mario Bros",
+            platform="NES",
+            confidence="high",
+        )
+        assert result.image_type == "item"
+        assert result.item_type == ItemType.GAME
+        assert result.title == "Super Mario Bros"
+
+
+class TestUnifiedPrompt:
+    """Tests for the unified classification prompt."""
+
+    def test_unified_prompt_mentions_all_types(self) -> None:
+        """Test that unified prompt covers all image types."""
+        assert "divider" in UNIFIED_PROMPT.lower()
+        assert "black" in UNIFIED_PROMPT.lower()
+        assert "item" in UNIFIED_PROMPT.lower()
+
+    def test_unified_prompt_contains_json_format(self) -> None:
+        """Test that unified prompt shows JSON format."""
+        assert "image_type" in UNIFIED_PROMPT
+        assert "location_id" in UNIFIED_PROMPT
+
+
+class TestParseUnifiedResponse:
+    """Tests for parsing unified AI responses."""
+
+    def test_parse_divider_response(self) -> None:
+        """Test parsing a divider response."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = json.dumps({"image_type": "divider", "location_id": "SHELF-A1"})
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.image_type == "divider"
+        assert result.location_id == "SHELF-A1"
+
+    def test_parse_divider_normalizes_location(self) -> None:
+        """Test that location IDs are normalized to uppercase."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = json.dumps({"image_type": "divider", "location_id": "box-5"})
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.location_id == "BOX-5"
+
+    def test_parse_black_frame_response(self) -> None:
+        """Test parsing a black frame response."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = json.dumps({"image_type": "black_frame"})
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.image_type == "black_frame"
+
+    def test_parse_item_response(self) -> None:
+        """Test parsing an item response."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = json.dumps(
+            {
+                "image_type": "item",
+                "item_type": "game",
+                "title": "Final Fantasy VII",
+                "platform": "PlayStation",
+                "brand": "Square",
+                "region": "NTSC-U",
+                "completeness": "complete",
+                "condition_notes": "Minor scratches on disc",
+                "confidence": "high",
+            }
+        )
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.image_type == "item"
+        assert result.item_type == ItemType.GAME
+        assert result.title == "Final Fantasy VII"
+        assert result.platform == "PlayStation"
+        assert result.completeness == "complete"
+        assert result.condition_notes == "Minor scratches on disc"
+
+    def test_parse_item_with_markdown(self) -> None:
+        """Test parsing item response wrapped in markdown."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = """```json
+{
+    "image_type": "item",
+    "item_type": "console",
+    "title": "Nintendo 64",
+    "brand": "Nintendo",
+    "confidence": "high"
+}
+```"""
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.image_type == "item"
+        assert result.item_type == ItemType.CONSOLE
+        assert result.title == "Nintendo 64"
+
+    def test_parse_invalid_json_defaults_to_item(self) -> None:
+        """Test that invalid JSON defaults to item with low confidence."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = "This is not valid JSON"
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.image_type == "item"
+        assert result.item_type == ItemType.OTHER
+        assert result.confidence == "low"
+
+    def test_parse_unknown_item_type_defaults_to_other(self) -> None:
+        """Test that unknown item types default to OTHER."""
+        identifier = ItemIdentifier(provider="ollama")
+        response = json.dumps(
+            {"image_type": "item", "item_type": "widget", "title": "Unknown Thing"}
+        )
+
+        result = identifier._parse_unified_response(response)
+
+        assert result.item_type == ItemType.OTHER
+
+
+class TestClassifyAndIdentify:
+    """Tests for classify_and_identify method."""
+
+    @patch("httpx.post")
+    def test_classify_and_identify_ollama(self, mock_post: MagicMock) -> None:
+        """Test classify_and_identify with Ollama."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "image_type": "item",
+                    "item_type": "game",
+                    "title": "Sonic the Hedgehog",
+                    "platform": "Genesis",
+                    "confidence": "high",
+                }
+            )
+        }
+        mock_post.return_value = mock_response
+
+        identifier = ItemIdentifier(provider="ollama")
+        result = identifier.classify_and_identify(b"fake_image_data")
+
+        assert result.image_type == "item"
+        assert result.item_type == ItemType.GAME
+        assert result.title == "Sonic the Hedgehog"
+
+        # Verify unified prompt was used
+        call_kwargs = mock_post.call_args
+        assert "divider" in call_kwargs[1]["json"]["prompt"].lower()
+
+    @patch("httpx.post")
+    def test_classify_and_identify_divider(self, mock_post: MagicMock) -> None:
+        """Test classify_and_identify returning a divider."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps({"image_type": "divider", "location_id": "BOX-42"})
+        }
+        mock_post.return_value = mock_response
+
+        identifier = ItemIdentifier(provider="ollama")
+        result = identifier.classify_and_identify(b"fake_image_data")
+
+        assert result.image_type == "divider"
+        assert result.location_id == "BOX-42"
+
+    @patch("httpx.post")
+    def test_classify_and_identify_black_frame(self, mock_post: MagicMock) -> None:
+        """Test classify_and_identify returning a black frame."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps({"image_type": "black_frame"})
+        }
+        mock_post.return_value = mock_response
+
+        identifier = ItemIdentifier(provider="ollama")
+        result = identifier.classify_and_identify(b"fake_image_data")
+
+        assert result.image_type == "black_frame"

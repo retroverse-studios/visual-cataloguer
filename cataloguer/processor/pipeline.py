@@ -26,7 +26,11 @@ from tqdm import tqdm
 
 from cataloguer.database.models import Database, Item
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
-from cataloguer.processor.identifier import IdentificationResult, ItemIdentifier
+from cataloguer.processor.identifier import (
+    IdentificationResult,
+    ItemIdentifier,
+    UnifiedResult,
+)
 
 
 @dataclass
@@ -84,7 +88,7 @@ class ProcessingPipeline:
         database: Database,
         classifier: ImageClassifier | None = None,
         identifier: ItemIdentifier | None = None,
-        ai_mode: str = "none",  # "none", "fallback", "all"
+        offline_mode: bool = False,
         jpeg_quality: int = 85,
         thumbnail_size: int = 400,
     ) -> None:
@@ -92,19 +96,17 @@ class ProcessingPipeline:
 
         Args:
             database: Database instance for storing results
-            classifier: Image classifier (creates default if not provided)
-            identifier: Item identifier for AI-based identification
-            ai_mode: When to use AI identification:
-                     - "none": Never use AI (OCR only)
-                     - "fallback": Use AI when OCR fails or low confidence
-                     - "all": Use AI for all items
+            classifier: Image classifier (for offline mode)
+            identifier: Item identifier for AI-based processing
+            offline_mode: If True, use classifier-only mode (no AI).
+                         If False (default), use AI for all classification and identification.
             jpeg_quality: JPEG quality for stored images (0-100)
             thumbnail_size: Max dimension for thumbnails
         """
         self.db = database
         self.classifier = classifier or ImageClassifier()
         self.identifier = identifier
-        self.ai_mode = ai_mode
+        self.offline_mode = offline_mode
         self.jpeg_quality = jpeg_quality
         self.thumbnail_size = thumbnail_size
 
@@ -248,31 +250,12 @@ class ProcessingPipeline:
             )
 
         try:
-            # Classify the image
-            classification = self.classifier.classify_file(image_file.path)
-
-            # If classified as GAME_ITEM but looks like a potential text divider,
-            # use AI to check (white paper with text might be a hand-written divider)
-            if (
-                classification.image_type == ImageType.GAME_ITEM
-                and self.identifier
-                and self.ai_mode != "none"
-            ):
-                image = self._load_image(image_file.path)
-                if self.classifier.is_potential_text_divider(image):
-                    # Ask AI if this is a divider
-                    jpeg_for_ai = self._encode_jpeg(image)
-                    is_divider, location_id = self.identifier.identify_divider(jpeg_for_ai)
-                    if is_divider and location_id:
-                        # Override classification to LOCATION_DIVIDER
-                        classification = ClassificationResult(
-                            image_type=ImageType.LOCATION_DIVIDER,
-                            confidence=0.9,
-                            location_id=location_id,
-                            detection_method="ai",
-                        )
-
-            result = self._handle_classification(image_file, classification)
+            if self.offline_mode or self.identifier is None:
+                # Offline mode: use classifier only
+                result = self._process_offline(image_file)
+            else:
+                # AI-first mode: single AI call for classification + identification
+                result = self._process_with_ai(image_file)
 
             # Log success
             self.db.log_processing(
@@ -302,6 +285,160 @@ class ProcessingPipeline:
                 status="failed",
                 error_message=error_msg,
             )
+
+    def _process_with_ai(self, image_file: ImageFile) -> ProcessingResult:
+        """Process an image using AI-first classification and identification."""
+        # Load and encode image
+        image = self._load_image(image_file.path)
+        jpeg_data = self._encode_jpeg(image)
+
+        # Single AI call for classification + identification
+        result = self.identifier.classify_and_identify(jpeg_data)  # type: ignore[union-attr]
+
+        if result.image_type == "black_frame":
+            return self._handle_ai_black_frame(image_file)
+        elif result.image_type == "divider":
+            return self._handle_ai_divider(image_file, result.location_id)
+        else:
+            return self._handle_ai_item(image_file, image, result)
+
+    def _handle_ai_black_frame(self, image_file: ImageFile) -> ProcessingResult:
+        """Handle a black frame detected by AI."""
+        # Check for consecutive black frames
+        if self.last_image_type == ImageType.BLACK_FRAME:
+            return ProcessingResult(
+                source_path=image_file.path,
+                source_hash=image_file.file_hash,
+                status="skipped",
+                image_type=ImageType.BLACK_FRAME,
+            )
+
+        self.current_location_id = None
+        self.last_image_type = ImageType.BLACK_FRAME
+        self.last_location_id = None
+
+        return ProcessingResult(
+            source_path=image_file.path,
+            source_hash=image_file.file_hash,
+            status="success",
+            image_type=ImageType.BLACK_FRAME,
+        )
+
+    def _handle_ai_divider(
+        self, image_file: ImageFile, location_id: str | None
+    ) -> ProcessingResult:
+        """Handle a location divider detected by AI."""
+        # Check for consecutive same location dividers
+        if (
+            self.last_image_type == ImageType.LOCATION_DIVIDER
+            and self.last_location_id == location_id
+        ):
+            return ProcessingResult(
+                source_path=image_file.path,
+                source_hash=image_file.file_hash,
+                status="skipped",
+                image_type=ImageType.LOCATION_DIVIDER,
+                location_id=location_id,
+            )
+
+        if location_id:
+            self.current_location_id = location_id
+            self.db.create_location(location_id)
+
+        self.last_image_type = ImageType.LOCATION_DIVIDER
+        self.last_location_id = location_id
+
+        return ProcessingResult(
+            source_path=image_file.path,
+            source_hash=image_file.file_hash,
+            status="success",
+            image_type=ImageType.LOCATION_DIVIDER,
+            location_id=location_id,
+        )
+
+    def _handle_ai_item(
+        self, image_file: ImageFile, image: np.ndarray, result: UnifiedResult
+    ) -> ProcessingResult:
+        """Handle an item detected by AI."""
+        # If no active location, create an UNKNOWN location
+        if self.current_location_id is None:
+            self.unknown_location_counter += 1
+            self.current_location_id = f"UNKNOWN-{self.unknown_location_counter}"
+            self.db.create_location(
+                self.current_location_id, label="Auto-created (missing divider)"
+            )
+
+        # Create thumbnail
+        thumbnail = self._create_thumbnail(image)
+
+        # Encode images as JPEG
+        full_jpeg = self._encode_jpeg(image)
+        thumb_jpeg = self._encode_jpeg(thumbnail)
+
+        # Build item from AI result
+        item = self._build_item_from_ai(image_file, result)
+
+        item_id = self.db.create_item(item)
+
+        # Store images
+        h, w = image.shape[:2]
+        self.db.add_image(item_id, "full", full_jpeg, w, h, is_cover=True)
+
+        th, tw = thumbnail.shape[:2]
+        self.db.add_image(item_id, "thumb", thumb_jpeg, tw, th)
+
+        # Update state
+        self.last_image_type = ImageType.GAME_ITEM
+        self.last_location_id = None
+
+        return ProcessingResult(
+            source_path=image_file.path,
+            source_hash=image_file.file_hash,
+            status="success",
+            image_type=ImageType.GAME_ITEM,
+            items_created=1,
+            location_id=self.current_location_id,
+        )
+
+    def _build_item_from_ai(
+        self, image_file: ImageFile, result: UnifiedResult
+    ) -> Item:
+        """Build an Item from AI unified result."""
+        import json
+
+        needs_review = result.confidence == "low"
+        review_reason = "Low AI confidence" if needs_review else None
+
+        return Item(
+            location_id=self.current_location_id,
+            source_camera=image_file.camera,
+            source_filename=image_file.path.name,
+            source_hash=image_file.file_hash,
+            captured_at=image_file.captured_at,
+            source_item_group=str(uuid.uuid4()),
+            object_index=1,
+            is_primary_image=True,
+            item_type=result.item_type.value if result.item_type else "other",
+            ai_description=json.dumps(result.raw_response),
+            ai_identified=True,
+            object_count=1,
+            completeness=result.completeness or "unknown",
+            ocr_text_raw=None,  # No OCR in AI-first mode
+            title_guess=result.title,
+            platform_guess=result.platform,
+            brand=result.brand,
+            region=result.region,
+            year=result.year,
+            condition_notes=result.condition_notes,
+            needs_review=needs_review,
+            review_reason=review_reason,
+        )
+
+    def _process_offline(self, image_file: ImageFile) -> ProcessingResult:
+        """Process an image in offline mode using classifier only."""
+        # Use existing classifier-based flow
+        classification = self.classifier.classify_file(image_file.path)
+        return self._handle_classification(image_file, classification)
 
     def _handle_classification(
         self, image_file: ImageFile, classification: ClassificationResult
@@ -388,7 +525,7 @@ class ProcessingPipeline:
     def _handle_game_item(
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
-        """Handle a game item image."""
+        """Handle a game item image in offline mode (OCR only, no AI)."""
         # If no active location, create an UNKNOWN location (missed divider recovery)
         if self.current_location_id is None:
             self.unknown_location_counter += 1
@@ -404,26 +541,6 @@ class ProcessingPipeline:
         ocr_text = self._extract_text(image)
         ocr_title = self._guess_title(ocr_text)
 
-        # Determine if we should use AI identification
-        use_ai = self._should_use_ai(ocr_text, ocr_title)
-        ai_result: IdentificationResult | None = None
-
-        if use_ai and self.identifier:
-            try:
-                # Use JPEG for AI identification (more efficient than RAW)
-                jpeg_for_ai = self._encode_jpeg(image)
-                ai_result = self.identifier.identify_bytes(jpeg_for_ai)
-            except Exception as e:
-                # AI failed, fall back to OCR
-                ai_result = None
-                # Add note about AI failure
-                classification = ClassificationResult(
-                    image_type=classification.image_type,
-                    confidence=classification.confidence,
-                    needs_review=True,
-                    review_reason=f"AI identification failed: {e}",
-                )
-
         # Create thumbnail
         thumbnail = self._create_thumbnail(image)
 
@@ -431,12 +548,12 @@ class ProcessingPipeline:
         full_jpeg = self._encode_jpeg(image)
         thumb_jpeg = self._encode_jpeg(thumbnail)
 
-        # Build item from OCR and/or AI results
+        # Build item from OCR only (no AI in offline mode)
         item = self._build_item(
             image_file=image_file,
             ocr_text=ocr_text,
             ocr_title=ocr_title,
-            ai_result=ai_result,
+            ai_result=None,
             classification=classification,
         )
 
@@ -457,18 +574,6 @@ class ProcessingPipeline:
             items_created=1,
             location_id=self.current_location_id,
         )
-
-    def _should_use_ai(self, ocr_text: str | None, ocr_title: str | None) -> bool:
-        """Determine if AI identification should be used."""
-        if self.ai_mode == "none":
-            return False
-        if self.ai_mode == "all":
-            return True
-        # "fallback" mode - use AI if OCR didn't give us a good title
-        if not ocr_title or len(ocr_title) < 3:
-            return True
-        # Also use AI if OCR text is very short (likely no readable text)
-        return not ocr_text or len(ocr_text.strip()) < 10
 
     def _build_item(
         self,

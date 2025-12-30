@@ -8,10 +8,10 @@ consoles, controllers, books, vinyl, and other collectibles.
 import base64
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -29,6 +29,37 @@ class ItemType(str, Enum):
     CD = "cd"
     TRADING_CARD = "trading_card"
     OTHER = "other"
+
+
+@dataclass
+class UnifiedResult:
+    """Result from AI classification and identification.
+
+    A single result type that handles all image types:
+    - divider: Location divider (QR code, paper sign, handwritten label)
+    - black_frame: Dark image signaling end of location sequence
+    - item: Collectible item to catalogue
+    """
+
+    image_type: Literal["divider", "black_frame", "item"]
+
+    # For dividers
+    location_id: str | None = None
+
+    # For items
+    item_type: ItemType | None = None
+    title: str | None = None
+    platform: str | None = None
+    brand: str | None = None
+    region: str | None = None
+    condition: str | None = None
+    completeness: str | None = None
+    year: str | None = None
+    condition_notes: str | None = None
+    description: str | None = None
+    confidence: str | None = None
+
+    raw_response: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -82,6 +113,54 @@ Important:
 - Be specific about what you can and cannot determine
 
 Respond ONLY with the JSON object, no other text."""
+
+
+UNIFIED_PROMPT = """Analyze this image and determine what type it is.
+
+There are exactly 3 types:
+
+1. **LOCATION DIVIDER**: A piece of paper, sign, or QR code showing a location code.
+   Examples: BOX-1, SHELF-A3, GARAGE-2, ROOM1-RACK2
+   These are simple labels used to organize items by storage location.
+
+2. **BLACK FRAME**: A completely dark/black image (lens cap on, hand over lens).
+   Used to signal the end of a location sequence. Very dark, nearly all black.
+
+3. **ITEM**: A collectible item to catalogue - a game, console, controller, book, vinyl, etc.
+   This is the default if the image shows an actual product or collectible.
+
+Respond with JSON in this format:
+
+For a LOCATION DIVIDER:
+{"image_type": "divider", "location_id": "BOX-1"}
+
+For a BLACK FRAME:
+{"image_type": "black_frame"}
+
+For an ITEM (include all identification details):
+{
+  "image_type": "item",
+  "item_type": "game|console|controller|accessory|peripheral|book|vinyl|cd|trading_card|other",
+  "title": "Name of the item",
+  "platform": "NES, SNES, PS2, etc. (null for non-gaming items)",
+  "brand": "Nintendo, Sony, etc.",
+  "region": "NTSC-U, NTSC-J, PAL, or null",
+  "condition": "mint, good, fair, poor, or null",
+  "completeness": "loose, boxed, complete, sealed (for games), or null",
+  "year": "Release year or null",
+  "condition_notes": "Physical condition observations (scratches, wear, etc.) or null",
+  "description": "Brief description of what you see",
+  "confidence": "high, medium, or low"
+}
+
+Important:
+- Location dividers are SIMPLE labels - just text/QR on paper. Not product boxes.
+- Black frames are VERY dark - average brightness near zero.
+- When in doubt, classify as "item" and identify it.
+- For stylized logos, identify the title even if decorative.
+- For Japanese items, provide both Japanese and English names if known.
+
+Respond ONLY with the JSON object."""
 
 
 class ItemIdentifier:
@@ -351,3 +430,94 @@ Respond ONLY with the JSON object."""
         response.raise_for_status()
         result = response.json()
         return result.get("response", "")
+
+    def classify_and_identify(
+        self, image_data: bytes, media_type: str = "image/jpeg"
+    ) -> UnifiedResult:
+        """Classify an image and identify its contents in a single AI call.
+
+        This is the main entry point for AI-first processing. It determines
+        whether the image is a divider, black frame, or item, and returns
+        full identification details for items.
+
+        Args:
+            image_data: Raw image bytes
+            media_type: MIME type of the image
+
+        Returns:
+            UnifiedResult with image type and relevant details
+        """
+        base64_image = base64.standard_b64encode(image_data).decode("utf-8")
+
+        if self.provider == "claude":
+            response_text = self._query_claude(base64_image, media_type, UNIFIED_PROMPT)
+        else:
+            response_text = self._query_ollama(base64_image, UNIFIED_PROMPT)
+
+        return self._parse_unified_response(response_text)
+
+    def _parse_unified_response(self, response_text: str) -> UnifiedResult:
+        """Parse the unified AI response into a UnifiedResult."""
+        # Extract JSON from response
+        try:
+            # Handle markdown code blocks
+            if "```json" in response_text:
+                start = response_text.find("```json") + 7
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+            elif "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.find("```", start)
+                response_text = response_text[start:end].strip()
+
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, assume it's an item with low confidence
+            return UnifiedResult(
+                image_type="item",
+                item_type=ItemType.OTHER,
+                description=response_text,
+                confidence="low",
+                raw_response={"error": "Failed to parse JSON", "raw": response_text},
+            )
+
+        image_type = data.get("image_type", "item")
+
+        if image_type == "divider":
+            location_id = data.get("location_id")
+            if location_id:
+                location_id = location_id.upper().strip()
+            return UnifiedResult(
+                image_type="divider",
+                location_id=location_id,
+                raw_response=data,
+            )
+
+        if image_type == "black_frame":
+            return UnifiedResult(
+                image_type="black_frame",
+                raw_response=data,
+            )
+
+        # Default: item
+        item_type_str = data.get("item_type", "other")
+        try:
+            item_type = ItemType(item_type_str.lower() if item_type_str else "other")
+        except ValueError:
+            item_type = ItemType.OTHER
+
+        return UnifiedResult(
+            image_type="item",
+            item_type=item_type,
+            title=data.get("title"),
+            platform=data.get("platform"),
+            brand=data.get("brand"),
+            region=data.get("region"),
+            condition=data.get("condition"),
+            completeness=data.get("completeness"),
+            year=data.get("year"),
+            condition_notes=data.get("condition_notes"),
+            description=data.get("description"),
+            confidence=data.get("confidence"),
+            raw_response=data,
+        )

@@ -62,17 +62,17 @@ Write the location ID on white paper. When AI mode is enabled, the tool will rea
 ### 3. Process Images
 
 ```bash
-# Basic processing (OCR only)
+# Default: AI-powered processing with Ollama (free, local)
 viscatalog process ./photos
 
-# With AI identification (recommended)
-viscatalog process ./photos --ai-identify
+# Use Claude for better accuracy (requires ANTHROPIC_API_KEY)
+viscatalog process ./photos --provider claude
 
-# AI for items that OCR can't read (stylized logos, Japanese text)
-viscatalog process ./photos --ai-fallback
+# Offline mode: QR/OCR only, no AI
+viscatalog process ./photos --offline
 
-# Use Ollama instead of Claude
-viscatalog process ./photos --ai-identify --ai-provider ollama
+# Use a specific model
+viscatalog process ./photos --provider ollama --model llava:13b
 ```
 
 ### 4. Review & Correct
@@ -114,8 +114,8 @@ viscatalog serve --port 8000
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ Load Image  │────▶│  Classify   │────▶│   Process   │
-│ (ARW/JPG)   │     │ Image Type  │     │ Accordingly │
+│ Load Image  │────▶│     AI      │────▶│   Process   │
+│ (ARW/JPG)   │     │  Classify   │     │ Accordingly │
 └─────────────┘     └─────────────┘     └─────────────┘
                            │
            ┌───────────────┼───────────────┐
@@ -126,13 +126,15 @@ viscatalog serve --port 8000
      └──────────┘    └──────────┘    └──────────┘
           │               │               │
           ▼               ▼               ▼
-     Set current     Clear current    AI/OCR identify
-     location        location         Store in DB
+     Set current     Clear current    Store item
+     location        location         in database
 ```
+
+**AI-First Architecture:** A single AI call classifies the image type AND identifies item details. This handles QR codes, handwritten text, stylized logos, and Japanese text seamlessly.
 
 ## AI Identification
 
-When enabled (`--ai-identify` or `--ai-fallback`), the tool uses vision AI to extract:
+By default, the tool uses vision AI (Ollama) to classify and identify items:
 
 | Field | Example |
 |-------|---------|
@@ -184,8 +186,8 @@ uv pip install visual-cataloguer[web]
 ## CLI Reference
 
 ```bash
-# Processing
-viscatalog process <input-dir> [--ai-identify] [--ai-fallback] [--ai-provider claude|ollama]
+# Processing (AI-first by default)
+viscatalog process <input-dir> [--provider ollama|claude] [--model MODEL] [--offline]
 
 # Viewing
 viscatalog stats
