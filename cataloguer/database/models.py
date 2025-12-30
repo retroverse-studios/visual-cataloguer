@@ -400,3 +400,128 @@ class Database:
             stats["failed_files"] = row[0] if row else 0
 
             return stats
+
+    def get_item(self, item_id: int) -> Item | None:
+        """Get an item by ID."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM items WHERE item_id = ?", (item_id,)
+            ).fetchone()
+            if not row:
+                return None
+            return Item(
+                item_id=row["item_id"],
+                location_id=row["location_id"],
+                source_camera=row["source_camera"],
+                source_filename=row["source_filename"],
+                source_hash=row["source_hash"],
+                captured_at=row["captured_at"],
+                source_item_group=row["source_item_group"],
+                object_index=row["object_index"] or 1,
+                is_primary_image=bool(row["is_primary_image"]),
+                item_type=row["item_type"] or "game",
+                ai_description=row["ai_description"],
+                ai_identified=bool(row["ai_identified"]),
+                object_count=row["object_count"],
+                completeness=row["completeness"] or "unknown",
+                ocr_text_raw=row["ocr_text_raw"],
+                title_guess=row["title_guess"],
+                title_confidence=row["title_confidence"],
+                platform_guess=row["platform_guess"],
+                brand=row["brand"],
+                region=row["region"],
+                year=row["year"],
+                language=row["language"] or "en",
+                title_manual=row["title_manual"],
+                platform_manual=row["platform_manual"],
+                notes=row["notes"],
+                ebay_listed=bool(row["ebay_listed"]),
+                ebay_listing_id=row["ebay_listing_id"],
+                needs_review=bool(row["needs_review"]),
+                review_reason=row["review_reason"],
+                phash=row["phash"],
+                processed_at=row["processed_at"],
+                updated_at=row["updated_at"],
+            )
+
+    def update_item(self, item_id: int, **fields: str | int | float | bool | None) -> bool:
+        """Update item fields. Returns True if item was updated."""
+        if not fields:
+            return False
+
+        # Build dynamic UPDATE query
+        valid_fields = {
+            "location_id", "item_type", "completeness", "title_guess", "title_confidence",
+            "platform_guess", "brand", "region", "year", "language", "title_manual",
+            "platform_manual", "notes", "ebay_listed", "ebay_listing_id", "needs_review",
+            "review_reason", "ai_description", "ai_identified", "ocr_text_raw",
+        }
+
+        # Filter to only valid fields
+        updates = {k: v for k, v in fields.items() if k in valid_fields}
+        if not updates:
+            return False
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values())
+        values.append(item_id)
+
+        with self.connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE items SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE item_id = ?",
+                values,
+            )
+            return cursor.rowcount > 0
+
+    def get_item_image(self, item_id: int, image_type: str = "full") -> bytes | None:
+        """Get image blob for an item."""
+        with self.connection() as conn:
+            row = conn.execute(
+                """
+                SELECT image_blob FROM item_images
+                WHERE item_id = ? AND image_type = ?
+                ORDER BY is_cover DESC, created_at DESC
+                LIMIT 1
+                """,
+                (item_id, image_type),
+            ).fetchone()
+            if row:
+                return bytes(row["image_blob"])
+            # Fallback to any image if requested type not found
+            if image_type != "full":
+                row = conn.execute(
+                    """
+                    SELECT image_blob FROM item_images
+                    WHERE item_id = ?
+                    ORDER BY is_cover DESC, created_at DESC
+                    LIMIT 1
+                    """,
+                    (item_id,),
+                ).fetchone()
+                if row:
+                    return bytes(row["image_blob"])
+            return None
+
+    def get_item_images_info(self, item_id: int) -> list[dict[str, int | str | bool]]:
+        """Get metadata about all images for an item."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT image_id, image_type, width, height, file_size, is_cover
+                FROM item_images
+                WHERE item_id = ?
+                ORDER BY is_cover DESC, created_at DESC
+                """,
+                (item_id,),
+            ).fetchall()
+            return [
+                {
+                    "image_id": row["image_id"],
+                    "image_type": row["image_type"],
+                    "width": row["width"],
+                    "height": row["height"],
+                    "file_size": row["file_size"],
+                    "is_cover": bool(row["is_cover"]),
+                }
+                for row in rows
+            ]

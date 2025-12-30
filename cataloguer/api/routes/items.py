@@ -1,5 +1,6 @@
 """Item routes for the API."""
 
+import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -35,6 +36,13 @@ class ItemResponse(BaseModel):
     needs_review: bool
     review_reason: str | None
     processed_at: str | None
+    # New fields for AI identification
+    item_type: str
+    ai_identified: bool
+    ai_description: str | None
+    brand: str | None
+    region: str | None
+    year: str | None
 
 
 class ItemListResponse(BaseModel):
@@ -83,6 +91,13 @@ def row_to_item(row: dict[str, Any]) -> ItemResponse:
         needs_review=bool(row["needs_review"]),
         review_reason=row["review_reason"],
         processed_at=str(row["processed_at"]) if row["processed_at"] else None,
+        # New fields
+        item_type=row["item_type"] or "game",
+        ai_identified=bool(row["ai_identified"]),
+        ai_description=row["ai_description"],
+        brand=row["brand"],
+        region=row["region"],
+        year=row["year"],
     )
 
 
@@ -96,12 +111,17 @@ def list_items(
     completeness: str | None = None,
     needs_review: bool | None = None,
     ebay_listed: bool | None = None,
+    # New filters for curation
+    unknown: bool | None = None,
+    low_confidence: bool | None = None,
+    item_type: str | None = None,
+    ai_identified: bool | None = None,
 ) -> ItemListResponse:
     """List items with optional filtering and pagination."""
     with db.connection() as conn:
         # Build query
         conditions = []
-        params: list[str | int] = []
+        params: list[str | int | float] = []
 
         if location_id:
             conditions.append("location_id = ?")
@@ -118,6 +138,17 @@ def list_items(
         if ebay_listed is not None:
             conditions.append("ebay_listed = ?")
             params.append(1 if ebay_listed else 0)
+        # New filters
+        if unknown:
+            conditions.append("(title_guess IS NULL OR title_guess = '')")
+        if low_confidence:
+            conditions.append("(title_confidence IS NULL OR title_confidence < 0.5)")
+        if item_type:
+            conditions.append("item_type = ?")
+            params.append(item_type)
+        if ai_identified is not None:
+            conditions.append("ai_identified = ?")
+            params.append(1 if ai_identified else 0)
 
         where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -292,4 +323,88 @@ def mark_item_listed(
             "SELECT * FROM items WHERE item_id = ?", (item_id,)
         ).fetchone()
 
+        return row_to_item(dict(updated_row))
+
+
+class ReidentifyRequest(BaseModel):
+    """Request model for re-identification."""
+
+    provider: str = "claude"
+    model: str | None = None
+
+
+@router.post("/{item_id}/reidentify", response_model=ItemResponse)
+def reidentify_item(
+    item_id: int,
+    request: ReidentifyRequest,
+    db: DbDep,
+) -> ItemResponse:
+    """Re-run AI identification on an item using its stored image."""
+    from cataloguer.processor.identifier import ItemIdentifier
+
+    # Get item
+    item = db.get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Get stored image
+    image_data = db.get_item_image(item_id, "full")
+    if not image_data:
+        raise HTTPException(
+            status_code=400,
+            detail="No image found for item. Upload an image first.",
+        )
+
+    # Initialize identifier
+    try:
+        identifier = ItemIdentifier(provider=request.provider, model=request.model)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    # Run identification
+    try:
+        result = identifier.identify_bytes(image_data, "image/jpeg")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Identification failed: {e}",
+        ) from None
+
+    # Map confidence to numeric
+    confidence_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+    title_confidence = None
+    if result.confidence and result.confidence in confidence_map:
+        title_confidence = confidence_map[result.confidence]
+
+    # Map completeness
+    completeness = "unknown"
+    if result.completeness:
+        completeness_map = {
+            "loose": "loose",
+            "boxed": "boxed",
+            "complete": "complete_set",
+            "sealed": "complete_set",
+        }
+        completeness = completeness_map.get(result.completeness, "unknown")
+
+    # Update item
+    db.update_item(
+        item_id,
+        item_type=result.item_type.value,
+        title_guess=result.title,
+        title_confidence=title_confidence,
+        platform_guess=result.platform,
+        brand=result.brand,
+        region=result.region,
+        year=result.year,
+        completeness=completeness,
+        ai_identified=True,
+        ai_description=json.dumps(result.raw_response),
+    )
+
+    # Return updated item
+    with db.connection() as conn:
+        updated_row = conn.execute(
+            "SELECT * FROM items WHERE item_id = ?", (item_id,)
+        ).fetchone()
         return row_to_item(dict(updated_row))

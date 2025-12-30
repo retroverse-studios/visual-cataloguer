@@ -1,7 +1,11 @@
 """Image routes for the API."""
 
-from fastapi import APIRouter, HTTPException
+import io
+from typing import Annotated
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
+from PIL import Image
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
@@ -165,3 +169,77 @@ def get_image_by_id(image_id: int, db: DbDep) -> Response:
             media_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"},
         )
+
+
+class ImageUploadResponse(BaseModel):
+    """Response model for image upload."""
+
+    image_id: int
+    item_id: int
+    image_type: str
+    width: int
+    height: int
+    file_size: int
+    is_cover: bool
+
+
+@router.post("/items/{item_id}/images", response_model=ImageUploadResponse)
+async def upload_item_image(
+    item_id: int,
+    db: DbDep,
+    file: Annotated[UploadFile, File()],
+    image_type: str = "full",
+    is_cover: bool = False,
+) -> ImageUploadResponse:
+    """Upload an image for an item.
+
+    Args:
+        item_id: The item to add the image to
+        file: The image file (JPEG, PNG, etc.)
+        image_type: Type of image ('full', 'thumb', 'context')
+        is_cover: Whether this should be the cover image
+    """
+    # Check item exists
+    item = db.get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    # Read and validate image
+    try:
+        contents = await file.read()
+        img = Image.open(io.BytesIO(contents))
+        width, height = img.size
+
+        # Convert to JPEG if needed
+        if img.format != "JPEG":
+            output = io.BytesIO()
+            # Convert to RGB if necessary (for PNG with alpha, etc.)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.save(output, format="JPEG", quality=85)
+            contents = output.getvalue()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image file: {e}",
+        ) from None
+
+    # Add to database
+    image_id = db.add_image(
+        item_id=item_id,
+        image_type=image_type,
+        image_blob=contents,
+        width=width,
+        height=height,
+        is_cover=is_cover,
+    )
+
+    return ImageUploadResponse(
+        image_id=image_id,
+        item_id=item_id,
+        image_type=image_type,
+        width=width,
+        height=height,
+        file_size=len(contents),
+        is_cover=is_cover,
+    )

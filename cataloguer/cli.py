@@ -227,12 +227,24 @@ def stats(database: Path) -> None:
 @click.option("--locations", is_flag=True, help="List all locations")
 @click.option("--location", type=str, help="List items in a specific location")
 @click.option("--needs-review", is_flag=True, help="List items needing review")
+@click.option("--unknown", is_flag=True, help="List items with unknown title")
+@click.option("--low-confidence", is_flag=True, help="List items with low confidence (<50%)")
+@click.option(
+    "--item-type",
+    type=click.Choice(
+        ["game", "console", "controller", "accessory", "peripheral", "book", "vinyl", "cd", "trading_card", "other"]
+    ),
+    help="Filter by item type",
+)
 @click.option("--limit", type=int, default=20, help="Maximum items to show")
 def list_items(
     database: Path,
     locations: bool,
     location: str | None,
     needs_review: bool,
+    unknown: bool,
+    low_confidence: bool,
+    item_type: str | None,
     limit: int,
 ) -> None:
     """List items or locations in the catalogue."""
@@ -262,36 +274,74 @@ def list_items(
             console.print(table)
 
         else:
-            # List items
+            # List items with filters
             query = """
-                SELECT item_id, location_id, title_guess, platform_guess, completeness
+                SELECT item_id, location_id, title_guess, platform_guess, completeness,
+                       item_type, title_confidence, needs_review
                 FROM items
             """
-            params: list[str] = []
+            conditions: list[str] = []
+            params: list[str | float] = []
 
             if location:
-                query += " WHERE location_id = ?"
+                conditions.append("location_id = ?")
                 params.append(location)
-            elif needs_review:
-                query += " WHERE needs_review = 1"
+            if needs_review:
+                conditions.append("needs_review = 1")
+            if unknown:
+                conditions.append("(title_guess IS NULL OR title_guess = '')")
+            if low_confidence:
+                conditions.append("(title_confidence IS NULL OR title_confidence < 0.5)")
+            if item_type:
+                conditions.append("item_type = ?")
+                params.append(item_type)
 
-            query += f" LIMIT {limit}"
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            query += f" ORDER BY item_id DESC LIMIT {limit}"
             rows = conn.execute(query, params).fetchall()
 
-            table = Table(title="Items")
+            # Determine title based on filters
+            title = "Items"
+            if unknown:
+                title = "Unknown Items"
+            elif low_confidence:
+                title = "Low Confidence Items"
+            elif needs_review:
+                title = "Items Needing Review"
+            elif item_type:
+                title = f"{item_type.title()} Items"
+
+            table = Table(title=title)
             table.add_column("ID", style="cyan")
             table.add_column("Title", style="white")
             table.add_column("Platform", style="yellow")
+            table.add_column("Type", style="magenta")
             table.add_column("Status", style="green")
+            table.add_column("Conf", style="dim")
             table.add_column("Location", style="blue")
 
             for row in rows:
+                conf = ""
+                if row["title_confidence"]:
+                    conf = f"{row['title_confidence']:.0%}"
+                elif row["title_guess"]:
+                    conf = "?"
+
+                # Add review marker to title if needed
+                title_display = (row["title_guess"] or "Unknown")[:35]
+                if row["needs_review"]:
+                    title_display = f"⚠ {title_display}"
+
                 table.add_row(
                     str(row["item_id"]),
-                    (row["title_guess"] or "Unknown")[:40],
+                    title_display,
                     row["platform_guess"] or "?",
+                    row["item_type"] or "game",
                     row["completeness"],
-                    row["location_id"] or "UNASSIGNED",
+                    conf,
+                    row["location_id"] or "-",
                 )
 
             console.print(table)
@@ -403,6 +453,395 @@ def serve(database: Path, host: str, port: int, reload: bool) -> None:
         port=port,
         reload=reload,
     )
+
+
+@main.command()
+@click.argument("item_id", type=int)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def show(item_id: int, database: Path, as_json: bool) -> None:
+    """Show detailed information for an item."""
+    import json
+
+    db = Database(database)
+    item = db.get_item(item_id)
+
+    if not item:
+        console.print(f"[red]Item {item_id} not found[/red]")
+        raise SystemExit(1)
+
+    if as_json:
+        # Output as JSON for scripting
+        import dataclasses
+
+        data = dataclasses.asdict(item)
+        # Convert datetime objects to strings
+        for k, v in data.items():
+            if hasattr(v, "isoformat"):
+                data[k] = v.isoformat() if v else None
+        console.print(json.dumps(data, indent=2, default=str))
+        return
+
+    # Rich formatted output
+    console.print(f"\n[bold cyan]Item #{item.item_id}[/bold cyan]")
+    console.print("=" * 50)
+
+    # Title section
+    title = item.title_manual or item.title_guess or "[Unknown]"
+    console.print(f"[bold]Title:[/bold] {title}")
+    if item.title_manual and item.title_guess:
+        console.print(f"  [dim](AI guess: {item.title_guess})[/dim]")
+    if item.title_confidence:
+        console.print(f"  [dim]Confidence: {item.title_confidence:.0%}[/dim]")
+
+    # Platform & Type
+    platform = item.platform_manual or item.platform_guess or "?"
+    console.print(f"[bold]Platform:[/bold] {platform}")
+    console.print(f"[bold]Item Type:[/bold] {item.item_type}")
+    console.print(f"[bold]Completeness:[/bold] {item.completeness}")
+
+    # Additional details
+    if item.brand:
+        console.print(f"[bold]Brand:[/bold] {item.brand}")
+    if item.region:
+        console.print(f"[bold]Region:[/bold] {item.region}")
+    if item.year:
+        console.print(f"[bold]Year:[/bold] {item.year}")
+    if item.language and item.language != "en":
+        console.print(f"[bold]Language:[/bold] {item.language}")
+
+    # Location
+    console.print(f"\n[bold]Location:[/bold] {item.location_id or 'UNASSIGNED'}")
+
+    # AI Identification
+    console.print(f"\n[bold]AI Identified:[/bold] {'Yes' if item.ai_identified else 'No'}")
+    if item.ai_description:
+        try:
+            ai_data = json.loads(item.ai_description)
+            console.print(f"  [dim]Description: {ai_data.get('description', '')[:100]}...[/dim]")
+        except json.JSONDecodeError:
+            console.print(f"  [dim]{item.ai_description[:100]}...[/dim]")
+
+    # Review status
+    if item.needs_review:
+        console.print("\n[yellow]⚠ Needs Review[/yellow]")
+        if item.review_reason:
+            console.print(f"  Reason: {item.review_reason}")
+
+    # eBay status
+    if item.ebay_listed:
+        console.print("\n[green]✓ Listed on eBay[/green]")
+        if item.ebay_listing_id:
+            console.print(f"  Listing ID: {item.ebay_listing_id}")
+
+    # Notes
+    if item.notes:
+        console.print(f"\n[bold]Notes:[/bold] {item.notes}")
+
+    # Source info
+    console.print(f"\n[dim]Source: {item.source_filename or 'Unknown'}[/dim]")
+    if item.source_camera:
+        console.print(f"[dim]Camera: {item.source_camera}[/dim]")
+
+    # Images
+    images = db.get_item_images_info(item_id)
+    if images:
+        console.print(f"\n[bold]Images:[/bold] {len(images)}")
+        for img in images:
+            cover = " [green](cover)[/green]" if img["is_cover"] else ""
+            console.print(
+                f"  - {img['image_type']}: {img['width']}x{img['height']} "
+                f"({int(img['file_size']) // 1024}KB){cover}"
+            )
+
+    # OCR text preview
+    if item.ocr_text_raw:
+        console.print("\n[bold]OCR Text:[/bold]")
+        console.print(f"  [dim]{item.ocr_text_raw[:200]}{'...' if len(item.ocr_text_raw) > 200 else ''}[/dim]")
+
+
+@main.command()
+@click.argument("item_id", type=int)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option("--title", type=str, help="Set title (manual override)")
+@click.option("--platform", type=str, help="Set platform (manual override)")
+@click.option(
+    "--completeness",
+    type=click.Choice(["unknown", "loose", "boxed", "partial", "complete_set"]),
+    help="Set completeness status",
+)
+@click.option("--region", type=str, help="Set region (NTSC-U, PAL, NTSC-J)")
+@click.option("--year", type=str, help="Set release year")
+@click.option("--brand", type=str, help="Set brand/manufacturer")
+@click.option("--notes", type=str, help="Set notes")
+@click.option("--location", type=str, help="Set location ID")
+@click.option(
+    "--item-type",
+    type=click.Choice(
+        ["game", "console", "controller", "accessory", "peripheral", "book", "vinyl", "cd", "trading_card", "other"]
+    ),
+    help="Set item type",
+)
+@click.option("--clear-review", is_flag=True, help="Clear needs_review flag")
+def edit(
+    item_id: int,
+    database: Path,
+    title: str | None,
+    platform: str | None,
+    completeness: str | None,
+    region: str | None,
+    year: str | None,
+    brand: str | None,
+    notes: str | None,
+    location: str | None,
+    item_type: str | None,
+    clear_review: bool,
+) -> None:
+    """Edit item fields manually."""
+    db = Database(database)
+
+    # Check item exists
+    item = db.get_item(item_id)
+    if not item:
+        console.print(f"[red]Item {item_id} not found[/red]")
+        raise SystemExit(1)
+
+    # Build update dict
+    updates: dict[str, str | bool | None] = {}
+    if title is not None:
+        updates["title_manual"] = title
+    if platform is not None:
+        updates["platform_manual"] = platform
+    if completeness is not None:
+        updates["completeness"] = completeness
+    if region is not None:
+        updates["region"] = region
+    if year is not None:
+        updates["year"] = year
+    if brand is not None:
+        updates["brand"] = brand
+    if notes is not None:
+        updates["notes"] = notes
+    if location is not None:
+        updates["location_id"] = location
+    if item_type is not None:
+        updates["item_type"] = item_type
+    if clear_review:
+        updates["needs_review"] = False
+        updates["review_reason"] = None
+
+    if not updates:
+        console.print("[yellow]No changes specified. Use --help to see options.[/yellow]")
+        return
+
+    # Apply updates
+    if db.update_item(item_id, **updates):
+        console.print(f"[green]✓ Updated item {item_id}[/green]")
+        for key, value in updates.items():
+            console.print(f"  {key}: {value}")
+    else:
+        console.print(f"[red]Failed to update item {item_id}[/red]")
+        raise SystemExit(1)
+
+
+@main.command()
+@click.argument("item_id", type=int)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "ollama"]),
+    default="claude",
+    help="AI provider (default: claude)",
+)
+@click.option("--model", type=str, help="AI model name")
+@click.option(
+    "--image",
+    type=click.Path(exists=True, path_type=Path),
+    help="Use this image instead of stored image (will be added to item)",
+)
+def reidentify(
+    item_id: int,
+    database: Path,
+    provider: str,
+    model: str | None,
+    image: Path | None,
+) -> None:
+    """Re-run AI identification on an item."""
+    from cataloguer.processor.identifier import ItemIdentifier
+
+    db = Database(database)
+
+    # Check item exists
+    item = db.get_item(item_id)
+    if not item:
+        console.print(f"[red]Item {item_id} not found[/red]")
+        raise SystemExit(1)
+
+    # Get image data
+    image_data: bytes
+    if image:
+        # Use provided image file
+        image_data = image.read_bytes()
+        console.print(f"Using image: {image}")
+
+        # Determine media type
+        suffix = image.suffix.lower()
+        media_type = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+        }.get(suffix, "image/jpeg")
+    else:
+        # Get stored image
+        stored_image = db.get_item_image(item_id, "full")
+        if not stored_image:
+            console.print(f"[red]No image found for item {item_id}[/red]")
+            console.print("Use --image to provide an image file")
+            raise SystemExit(1)
+        image_data = stored_image
+        media_type = "image/jpeg"
+        console.print("Using stored image")
+
+    # Initialize identifier
+    try:
+        identifier = ItemIdentifier(provider=provider, model=model)
+        console.print(f"Provider: {provider} ({identifier.model})")
+    except ValueError as e:
+        console.print(f"[red]AI setup failed: {e}[/red]")
+        raise SystemExit(1) from None
+
+    # Run identification
+    console.print("\n[bold]Running identification...[/bold]")
+    try:
+        result = identifier.identify_bytes(image_data, media_type)
+    except Exception as e:
+        console.print(f"[red]Identification failed: {e}[/red]")
+        raise SystemExit(1) from None
+
+    # Show results
+    console.print("\n[green]✓ Identification complete[/green]")
+    console.print(f"  Item Type: {result.item_type.value}")
+    console.print(f"  Title: {result.title or 'Unknown'}")
+    console.print(f"  Platform: {result.platform or 'N/A'}")
+    console.print(f"  Brand: {result.brand or 'Unknown'}")
+    console.print(f"  Region: {result.region or 'Unknown'}")
+    console.print(f"  Completeness: {result.completeness or 'unknown'}")
+    console.print(f"  Confidence: {result.confidence or 'unknown'}")
+
+    # Update item
+    import json
+
+    updates: dict[str, str | float | bool | None] = {
+        "item_type": result.item_type.value,
+        "title_guess": result.title,
+        "platform_guess": result.platform,
+        "brand": result.brand,
+        "region": result.region,
+        "year": result.year,
+        "ai_identified": True,
+        "ai_description": json.dumps(result.raw_response),
+    }
+
+    # Map confidence to numeric
+    confidence_map = {"high": 0.9, "medium": 0.6, "low": 0.3}
+    if result.confidence and result.confidence in confidence_map:
+        updates["title_confidence"] = confidence_map[result.confidence]
+
+    # Map completeness
+    if result.completeness:
+        completeness_map = {
+            "loose": "loose",
+            "boxed": "boxed",
+            "complete": "complete_set",
+            "sealed": "complete_set",
+        }
+        updates["completeness"] = completeness_map.get(result.completeness, "unknown")
+
+    if db.update_item(item_id, **updates):
+        console.print(f"\n[green]✓ Item {item_id} updated[/green]")
+    else:
+        console.print(f"[red]Failed to update item {item_id}[/red]")
+
+    # Add new image if provided
+    if image:
+        import io
+
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_data))
+        width, height = img.size
+        db.add_image(item_id, "full", image_data, width, height, is_cover=True)
+        console.print("[green]✓ Added image to item[/green]")
+
+
+@main.command()
+@click.argument("item_id", type=int)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option("--done", is_flag=True, help="Mark as reviewed (clear needs_review)")
+@click.option("--flag", is_flag=True, help="Flag for review")
+@click.option("--reason", type=str, help="Reason for flagging (use with --flag)")
+def review(
+    item_id: int,
+    database: Path,
+    done: bool,
+    flag: bool,
+    reason: str | None,
+) -> None:
+    """Mark an item as reviewed or flag for review."""
+    db = Database(database)
+
+    # Check item exists
+    item = db.get_item(item_id)
+    if not item:
+        console.print(f"[red]Item {item_id} not found[/red]")
+        raise SystemExit(1)
+
+    if done and flag:
+        console.print("[red]Cannot use both --done and --flag[/red]")
+        raise SystemExit(1)
+
+    if not done and not flag:
+        console.print("[yellow]Specify --done or --flag[/yellow]")
+        return
+
+    if done:
+        if db.update_item(item_id, needs_review=False, review_reason=None):
+            console.print(f"[green]✓ Item {item_id} marked as reviewed[/green]")
+        else:
+            console.print(f"[red]Failed to update item {item_id}[/red]")
+    elif flag:
+        if db.update_item(item_id, needs_review=True, review_reason=reason):
+            console.print(f"[yellow]⚠ Item {item_id} flagged for review[/yellow]")
+            if reason:
+                console.print(f"  Reason: {reason}")
+        else:
+            console.print(f"[red]Failed to update item {item_id}[/red]")
 
 
 if __name__ == "__main__":
