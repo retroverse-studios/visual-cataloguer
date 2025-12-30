@@ -1,3 +1,3 @@
 """Visual Cataloguer - Batch catalogue physical collections using visual dividers."""
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"

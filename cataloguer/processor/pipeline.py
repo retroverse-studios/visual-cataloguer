@@ -111,6 +111,9 @@ class ProcessingPipeline:
         # State machine
         self.current_location_id: str | None = None
         self.unknown_location_counter: int = 0  # Counter for auto-generated UNKNOWN locations
+        # Track last processed image type to handle consecutive duplicates
+        self.last_image_type: ImageType | None = None
+        self.last_location_id: str | None = None
 
     def scan_directory(self, input_dir: Path) -> list[ImageFile]:
         """Scan input directory recursively for image files.
@@ -281,13 +284,57 @@ class ProcessingPipeline:
     def _handle_classification(
         self, image_file: ImageFile, classification: ClassificationResult
     ) -> ProcessingResult:
-        """Handle a classified image based on its type."""
-        if classification.image_type == ImageType.LOCATION_DIVIDER:
-            return self._handle_location_divider(image_file, classification)
-        elif classification.image_type == ImageType.BLACK_FRAME:
-            return self._handle_black_frame(image_file)
-        else:
-            return self._handle_game_item(image_file, classification)
+        """Handle a classified image based on its type.
+
+        Handles consecutive duplicate dividers:
+        - Multiple BLACK_FRAMEs in a row: skip after the first (already cleared location)
+        - Multiple LOCATION_DIVIDERs with same ID: skip duplicates
+        - Multiple LOCATION_DIVIDERs with different IDs: use the new one
+        """
+        current_type = classification.image_type
+
+        # Handle consecutive BLACK_FRAMEs - skip if we already cleared location
+        if current_type == ImageType.BLACK_FRAME:
+            if self.last_image_type == ImageType.BLACK_FRAME:
+                # Consecutive black frame - skip it
+                return ProcessingResult(
+                    source_path=image_file.path,
+                    source_hash=image_file.file_hash,
+                    status="skipped",
+                    image_type=ImageType.BLACK_FRAME,
+                )
+            # Process the black frame
+            result = self._handle_black_frame(image_file)
+            self.last_image_type = ImageType.BLACK_FRAME
+            self.last_location_id = None
+            return result
+
+        # Handle consecutive LOCATION_DIVIDERs
+        if current_type == ImageType.LOCATION_DIVIDER:
+            new_location_id = classification.location_id
+            if (
+                self.last_image_type == ImageType.LOCATION_DIVIDER
+                and self.last_location_id == new_location_id
+            ):
+                # Same location divider repeated - skip it
+                return ProcessingResult(
+                    source_path=image_file.path,
+                    source_hash=image_file.file_hash,
+                    status="skipped",
+                    image_type=ImageType.LOCATION_DIVIDER,
+                    location_id=new_location_id,
+                )
+            # Process the location divider (new location or first divider)
+            result = self._handle_location_divider(image_file, classification)
+            self.last_image_type = ImageType.LOCATION_DIVIDER
+            self.last_location_id = new_location_id
+            return result
+
+        # Handle game item - always process, reset consecutive tracking
+        result = self._handle_game_item(image_file, classification)
+        self.last_image_type = ImageType.GAME_ITEM
+        self.last_location_id = None
+        return result
 
     def _handle_location_divider(
         self, image_file: ImageFile, classification: ClassificationResult
