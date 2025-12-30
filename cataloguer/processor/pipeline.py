@@ -250,6 +250,28 @@ class ProcessingPipeline:
         try:
             # Classify the image
             classification = self.classifier.classify_file(image_file.path)
+
+            # If classified as GAME_ITEM but looks like a potential text divider,
+            # use AI to check (white paper with text might be a hand-written divider)
+            if (
+                classification.image_type == ImageType.GAME_ITEM
+                and self.identifier
+                and self.ai_mode != "none"
+            ):
+                image = self._load_image(image_file.path)
+                if self.classifier.is_potential_text_divider(image):
+                    # Ask AI if this is a divider
+                    jpeg_for_ai = self._encode_jpeg(image)
+                    is_divider, location_id = self.identifier.identify_divider(jpeg_for_ai)
+                    if is_divider and location_id:
+                        # Override classification to LOCATION_DIVIDER
+                        classification = ClassificationResult(
+                            image_type=ImageType.LOCATION_DIVIDER,
+                            confidence=0.9,
+                            location_id=location_id,
+                            detection_method="ai",
+                        )
+
             result = self._handle_classification(image_file, classification)
 
             # Log success

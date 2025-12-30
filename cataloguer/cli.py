@@ -851,5 +851,168 @@ def review(
             console.print(f"[red]Failed to update item {item_id}[/red]")
 
 
+@main.command()
+@click.argument("output_dir", type=click.Path(path_type=Path))
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option("--location", type=str, help="Export only items from this location")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["images", "json", "csv"]),
+    default="images",
+    help="Export format: images (organized by location), json, or csv",
+)
+@click.option(
+    "--include-metadata",
+    is_flag=True,
+    help="Include metadata JSON file with each image (for images format)",
+)
+def export(
+    output_dir: Path,
+    database: Path,
+    location: str | None,
+    output_format: str,
+    include_metadata: bool,
+) -> None:
+    """Export items and images from the database.
+
+    Examples:
+
+        # Export all images organized by location
+        viscatalog export ./export
+
+        # Export only BOX-1 items
+        viscatalog export ./export --location BOX-1
+
+        # Export as CSV spreadsheet
+        viscatalog export ./inventory.csv --format csv
+
+        # Export as JSON
+        viscatalog export ./inventory.json --format json
+    """
+    import csv
+    import json
+
+    db = Database(database)
+
+    # Build query
+    with db.connection() as conn:
+        if location:
+            rows = conn.execute(
+                "SELECT * FROM items WHERE location_id = ? ORDER BY item_id",
+                (location,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM items ORDER BY location_id, item_id"
+            ).fetchall()
+
+        if not rows:
+            console.print("[yellow]No items found to export[/yellow]")
+            return
+
+        items = [dict(row) for row in rows]
+
+    if output_format == "csv":
+        # Export as CSV
+        output_path = output_dir if str(output_dir).endswith(".csv") else output_dir / "items.csv"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Define columns to export
+        columns = [
+            "item_id", "location_id", "title_guess", "title_manual", "platform_guess",
+            "platform_manual", "item_type", "completeness", "brand", "region", "year",
+            "condition_notes", "notes", "ebay_listed", "ebay_listing_id", "needs_review",
+            "ai_identified", "source_filename", "processed_at",
+        ]
+
+        with open(output_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            for item in items:
+                writer.writerow(item)
+
+        console.print(f"[green]✓ Exported {len(items)} items to {output_path}[/green]")
+
+    elif output_format == "json":
+        # Export as JSON
+        output_path = output_dir if str(output_dir).endswith(".json") else output_dir / "items.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Clean up datetime objects for JSON serialization
+        for item in items:
+            for key, value in item.items():
+                if hasattr(value, "isoformat"):
+                    item[key] = value.isoformat() if value else None
+
+        with open(output_path, "w") as f:
+            json.dump({"items": items, "count": len(items)}, f, indent=2, default=str)
+
+        console.print(f"[green]✓ Exported {len(items)} items to {output_path}[/green]")
+
+    else:
+        # Export images organized by location
+        output_dir.mkdir(parents=True, exist_ok=True)
+        exported_count = 0
+        skipped_count = 0
+
+        for item in items:
+            item_id = item["item_id"]
+            loc = item["location_id"] or "UNASSIGNED"
+
+            # Create location folder
+            loc_dir = output_dir / loc
+            loc_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get image
+            image_data = db.get_item_image(item_id, "full")
+            if not image_data:
+                skipped_count += 1
+                continue
+
+            # Build filename
+            title = item["title_manual"] or item["title_guess"] or "unknown"
+            # Sanitize filename
+            safe_title = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
+            filename = f"{item_id:05d}_{safe_title}.jpg"
+
+            # Write image
+            image_path = loc_dir / filename
+            with open(image_path, "wb") as f:
+                f.write(image_data)
+            exported_count += 1
+
+            # Optionally write metadata
+            if include_metadata:
+                meta = {k: v for k, v in item.items() if k != "ai_description"}
+                # Clean datetime
+                for key, value in meta.items():
+                    if hasattr(value, "isoformat"):
+                        meta[key] = value.isoformat() if value else None
+
+                meta_path = loc_dir / f"{item_id:05d}_{safe_title}.json"
+                with open(meta_path, "w") as f:
+                    json.dump(meta, f, indent=2, default=str)
+
+        console.print(f"[green]✓ Exported {exported_count} images to {output_dir}[/green]")
+        if skipped_count:
+            console.print(f"[yellow]  Skipped {skipped_count} items with no image[/yellow]")
+
+        # Show folder structure
+        locations = sorted(set(item["location_id"] or "UNASSIGNED" for item in items))
+        console.print("\n[bold]Folders created:[/bold]")
+        for loc in locations[:10]:
+            count = sum(1 for i in items if (i["location_id"] or "UNASSIGNED") == loc)
+            console.print(f"  {loc}/ ({count} items)")
+        if len(locations) > 10:
+            console.print(f"  ... and {len(locations) - 10} more")
+
+
 if __name__ == "__main__":
     main()

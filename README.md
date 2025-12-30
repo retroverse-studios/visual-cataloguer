@@ -35,12 +35,16 @@ The images stored are for *verifying the database is correct*, not for direct us
 
 ### 1. Prepare Dividers
 
-Print QR codes for each storage location:
+**Option A: QR codes (recommended)**
+Print QR codes containing location IDs:
 ```
 BOX-1    BOX-2    SHELF-A1    GARAGE-BIN-3
 ```
 
-You'll also need a way to create "black frames" - lens cap on, or photograph a black surface.
+**Option B: Hand-written/printed text**
+Write the location ID on white paper. When AI mode is enabled, the tool will read text dividers automatically. Keep the paper clean - just the location text on white background.
+
+**Black frames:** Put your hand over the lens to create a black image. This signals the end of a location sequence.
 
 ### 2. Photograph Your Collection
 
@@ -193,6 +197,12 @@ viscatalog show <item-id> [--json]
 viscatalog edit <item-id> [--title T] [--platform P] [--completeness C] [--notes N]
 viscatalog reidentify <item-id> [--provider P] [--model M] [--image PATH]
 viscatalog review <item-id> [--done | --flag --reason R]
+
+# Export
+viscatalog export <output-dir>                    # Export images by location
+viscatalog export ./data.csv --format csv         # Export metadata as CSV
+viscatalog export ./data.json --format json       # Export metadata as JSON
+viscatalog export ./images --include-metadata     # Images + JSON sidecar files
 
 # Web server
 viscatalog serve [--port 8000] [--host 0.0.0.0]

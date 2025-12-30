@@ -315,3 +315,34 @@ class ImageClassifier:
             "max": int(np.max(gray)),
             "is_black": bool(mean_val < self.black_threshold),
         }
+
+    def is_potential_text_divider(self, image: np.ndarray) -> bool:
+        """Check if image might be a text divider on white paper.
+
+        Looks for characteristics of a white paper with text:
+        - High mean brightness (mostly white background)
+        - Relatively low variance in non-text areas
+        - Some dark content (text)
+
+        This is used to decide whether to use AI for divider detection.
+        """
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+
+        # Resize for faster processing
+        height, width = gray.shape
+        if max(height, width) > 1000:
+            scale = 1000 / max(height, width)
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+        mean_val = float(np.mean(gray))
+        std_val = float(np.std(gray))
+
+        # White paper characteristics:
+        # - Mean brightness > 180 (out of 255) = mostly white
+        # - Std dev between 30-100 = some text but not a busy image
+        # - Not a black frame
+        is_mostly_white = mean_val > 180
+        has_some_content = 30 < std_val < 100
+        not_black = mean_val > self.black_threshold
+
+        return is_mostly_white and has_some_content and not_black

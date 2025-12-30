@@ -172,59 +172,12 @@ class ItemIdentifier:
         self, base64_image: str, media_type: str
     ) -> IdentificationResult:
         """Use Claude API for identification."""
-        import anthropic
-        from anthropic.types import ImageBlockParam, TextBlockParam
-
-        client = anthropic.Anthropic(api_key=self.api_key)
-
-        image_block: ImageBlockParam = {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,  # type: ignore[typeddict-item]
-                "data": base64_image,
-            },
-        }
-        text_block: TextBlockParam = {
-            "type": "text",
-            "text": IDENTIFICATION_PROMPT,
-        }
-
-        message = client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [image_block, text_block],
-                }
-            ],
-        )
-
-        # Extract JSON from response - first text block
-        response_text = ""
-        for block in message.content:
-            if hasattr(block, "text"):
-                response_text = block.text
-                break
+        response_text = self._query_claude(base64_image, media_type, IDENTIFICATION_PROMPT)
         return self._parse_response(response_text)
 
     def _identify_ollama(self, base64_image: str) -> IdentificationResult:
         """Use Ollama API for identification."""
-        response = httpx.post(
-            f"{self.ollama_host}/api/generate",
-            json={
-                "model": self.model,
-                "prompt": IDENTIFICATION_PROMPT,
-                "images": [base64_image],
-                "stream": False,
-            },
-            timeout=120.0,  # Vision models can be slow
-        )
-        response.raise_for_status()
-
-        result = response.json()
-        response_text = result.get("response", "")
+        response_text = self._query_ollama(base64_image, IDENTIFICATION_PROMPT)
         return self._parse_response(response_text)
 
     def _parse_response(self, response_text: str) -> IdentificationResult:
@@ -280,3 +233,121 @@ class ItemIdentifier:
             confidence=data.get("confidence"),
             raw_response=data,
         )
+
+    def identify_divider(
+        self, image_data: bytes, media_type: str = "image/jpeg"
+    ) -> tuple[bool, str | None]:
+        """Check if an image is a location divider and extract the location ID.
+
+        Used for text-based dividers (white paper with handwritten/printed location).
+
+        Args:
+            image_data: Raw image bytes
+            media_type: MIME type of the image
+
+        Returns:
+            Tuple of (is_divider, location_id)
+            - (True, "BOX-1") if it's a divider
+            - (False, None) if it's not a divider
+        """
+        base64_image = base64.standard_b64encode(image_data).decode("utf-8")
+
+        prompt = """Look at this image. Is it a location divider (a piece of paper or sign with a location code written on it)?
+
+Location dividers are simple labels like:
+- BOX-1, BOX-2, BOX-10
+- SHELF-A1, SHELF-B3
+- GARAGE-1, ROOM-2
+- Any text in format: WORD-NUMBER or WORD-LETTER-NUMBER
+
+If this IS a location divider, respond with JSON:
+{"is_divider": true, "location_id": "BOX-1"}
+
+If this is NOT a location divider (it's a game, book, product, or other item to catalog), respond with:
+{"is_divider": false, "location_id": null}
+
+Respond ONLY with the JSON object."""
+
+        if self.provider == "claude":
+            result = self._query_claude(base64_image, media_type, prompt)
+        else:
+            result = self._query_ollama(base64_image, prompt)
+
+        # Parse response
+        try:
+            if "```json" in result:
+                start = result.find("```json") + 7
+                end = result.find("```", start)
+                result = result[start:end].strip()
+            elif "```" in result:
+                start = result.find("```") + 3
+                end = result.find("```", start)
+                result = result[start:end].strip()
+
+            data = json.loads(result)
+            is_divider = data.get("is_divider", False)
+            location_id = data.get("location_id")
+
+            if is_divider and location_id:
+                # Normalize location ID format
+                location_id = location_id.upper().strip()
+                return (True, location_id)
+            return (False, None)
+        except (json.JSONDecodeError, KeyError):
+            return (False, None)
+
+    def _query_claude(
+        self, base64_image: str, media_type: str, prompt: str
+    ) -> str:
+        """Query Claude API with an image and prompt."""
+        import anthropic
+        from anthropic.types import ImageBlockParam, TextBlockParam
+
+        client = anthropic.Anthropic(api_key=self.api_key)
+
+        image_block: ImageBlockParam = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,  # type: ignore[typeddict-item]
+                "data": base64_image,
+            },
+        }
+        text_block: TextBlockParam = {
+            "type": "text",
+            "text": prompt,
+        }
+
+        message = client.messages.create(
+            model=self.model,
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [image_block, text_block],
+                }
+            ],
+        )
+
+        response_text = ""
+        for block in message.content:
+            if hasattr(block, "text"):
+                response_text = block.text
+                break
+        return response_text
+
+    def _query_ollama(self, base64_image: str, prompt: str) -> str:
+        """Query Ollama API with an image and prompt."""
+        response = httpx.post(
+            f"{self.ollama_host}/api/generate",
+            json={
+                "model": self.model,
+                "prompt": prompt,
+                "images": [base64_image],
+                "stream": False,
+            },
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result.get("response", "")
