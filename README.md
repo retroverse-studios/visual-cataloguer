@@ -1,5 +1,9 @@
 # visual-cataloguer
 
+<!-- BADGES:START -->
+[![ai](https://img.shields.io/badge/-ai-ff6f00?style=flat-square)](https://github.com/topics/ai) [![cataloging](https://img.shields.io/badge/-cataloging-blue?style=flat-square)](https://github.com/topics/cataloging) [![cli-tool](https://img.shields.io/badge/-cli-tool-blue?style=flat-square)](https://github.com/topics/cli-tool) [![computer-vision](https://img.shields.io/badge/-computer-vision-blue?style=flat-square)](https://github.com/topics/computer-vision) [![image-processing](https://img.shields.io/badge/-image-processing-blue?style=flat-square)](https://github.com/topics/image-processing) [![inventory-management](https://img.shields.io/badge/-inventory-management-blue?style=flat-square)](https://github.com/topics/inventory-management) [![machine-learning](https://img.shields.io/badge/-machine-learning-ff6f00?style=flat-square)](https://github.com/topics/machine-learning) [![python](https://img.shields.io/badge/-python-3776ab?style=flat-square)](https://github.com/topics/python) [![qr-code](https://img.shields.io/badge/-qr-code-blue?style=flat-square)](https://github.com/topics/qr-code) [![web-app](https://img.shields.io/badge/-web-app-blue?style=flat-square)](https://github.com/topics/web-app)
+<!-- BADGES:END -->
+
 Batch catalogue physical collections using visual dividers (QR codes) and automated image processing.
 
 ## The Problem
