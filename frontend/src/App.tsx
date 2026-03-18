@@ -6,6 +6,7 @@ import ItemCard from './components/ItemCard';
 import ItemModal from './components/ItemModal';
 import Pagination from './components/Pagination';
 import LocationsView from './components/LocationsView';
+import ImportWizard from './components/ImportWizard';
 
 type Tab = 'items' | 'locations';
 type Filter = 'all' | 'unlisted' | 'review';
@@ -22,6 +23,8 @@ export default function App() {
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [platformFilter, setPlatformFilter] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showImport, setShowImport] = useState(false);
+  const [isEmpty, setIsEmpty] = useState(false);
 
   const PER_PAGE = 24;
 
@@ -51,6 +54,12 @@ export default function App() {
       }
 
       setData(result);
+      // Detect empty collection (no items, no search, no filters)
+      if (!search && filter === 'all' && !platformFilter && result.total === 0) {
+        setIsEmpty(true);
+      } else {
+        setIsEmpty(false);
+      }
     } catch (e) {
       console.error('Failed to load items:', e);
     } finally {
@@ -90,7 +99,12 @@ export default function App() {
         <div className="container">
           <div className="header-row">
             <h1>Visual Cataloguer</h1>
-            <StatsBar key={refreshKey} />
+            <div className="header-actions">
+              <button className="btn btn-primary btn-sm" onClick={() => setShowImport(true)}>
+                + Import
+              </button>
+              <StatsBar key={refreshKey} />
+            </div>
           </div>
         </div>
       </header>
@@ -149,6 +163,13 @@ export default function App() {
 
             {loading ? (
               <div className="empty-state">Loading...</div>
+            ) : isEmpty ? (
+              <div className="onboarding">
+                <div className="onboarding-icon">📦</div>
+                <h2>Welcome to Visual Cataloguer</h2>
+                <p>Import a folder of photos to start cataloguing your collection. Use QR code dividers to organise by location, or just import and sort later.</p>
+                <button className="btn btn-primary" onClick={() => setShowImport(true)}>Import Your First Photos</button>
+              </div>
             ) : !data || data.items.length === 0 ? (
               <div className="empty-state">No items found</div>
             ) : (
@@ -175,6 +196,13 @@ export default function App() {
 
       {selectedItem && (
         <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} onSaved={handleItemSaved} />
+      )}
+
+      {showImport && (
+        <ImportWizard
+          onClose={() => setShowImport(false)}
+          onComplete={() => setRefreshKey((k) => k + 1)}
+        />
       )}
     </>
   );

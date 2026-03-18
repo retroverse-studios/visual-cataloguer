@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from cataloguer import __version__
 from cataloguer.api.deps import DbDep, configure_database
-from cataloguer.api.routes import images, items, locations, search
+from cataloguer.api.routes import images, items, locations, processing, search
 
 # Create app
 app = FastAPI(
@@ -32,6 +32,7 @@ app.include_router(items.router, prefix="/api/items", tags=["items"])
 app.include_router(locations.router, prefix="/api/locations", tags=["locations"])
 app.include_router(images.router, prefix="/api", tags=["images"])
 app.include_router(search.router, prefix="/api", tags=["search"])
+app.include_router(processing.router, prefix="/api", tags=["processing"])
 
 
 @app.get("/api/stats")
