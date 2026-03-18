@@ -1,6 +1,8 @@
+# Development: builds from local source instead of pulling from GHCR
+# Usage: docker compose -f docker-compose.dev.yml up --build
 services:
   app:
-    image: ghcr.io/retroverse-studios/visual-cataloguer:latest
+    build: .
     ports:
       - "${PORT:-8000}:8000"
     volumes:

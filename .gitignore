@@ -51,6 +51,9 @@ htmlcov/
 # macOS
 .DS_Store
 
+# Environment
+.env
+
 # Project specific
 processed_originals/
 failures.txt
