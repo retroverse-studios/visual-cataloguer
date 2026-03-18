@@ -223,11 +223,11 @@ class ItemIdentifier:
                     "ANTHROPIC_API_KEY environment variable not set. "
                     "Set it or pass api_key parameter."
                 )
-            self.model = model or "claude-3-haiku-20240307"
+            self.model = model or os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
         elif provider == "ollama":
             self.api_key = None
-            # Default to llava for vision tasks, but user can override
-            self.model = model or "llava"
+            self.model = model or os.environ.get("OLLAMA_MODEL", "llava")
+            self.ollama_host = os.environ.get("OLLAMA_HOST", ollama_host)
         else:
             raise ValueError(f"Unknown provider: {provider}. Use 'claude' or 'ollama'.")
 
