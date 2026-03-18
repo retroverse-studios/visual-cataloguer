@@ -22,6 +22,8 @@ class ProcessRequest(BaseModel):
 
     folder_path: str
     default_location: str | None = None
+    use_subfolders_as_locations: bool = False
+    skip_divider_detection: bool = False
     offline: bool = False
     provider: str = "auto"
     resume: bool = True
@@ -90,14 +92,14 @@ async def _process_stream(
             except Exception:
                 pass  # Fall back to offline
 
-        # Override starting location if provided
+        # Set up location strategy based on request
         if req.default_location:
             pipeline.current_location_id = req.default_location
-            db.ensure_location(req.default_location)
+            db.create_location(req.default_location)
 
         # Phase 1: Scan
         yield _sse(ProcessStatus(phase="scanning", message="Scanning folder..."))
-        await asyncio.sleep(0)  # Yield control
+        await asyncio.sleep(0)
 
         files = await asyncio.to_thread(pipeline.scan_directory, folder)
 
@@ -115,6 +117,19 @@ async def _process_stream(
             ))
             return
 
+        # If using subfolders as locations, group files by their parent directory
+        # and set location before processing each group
+        subfolder_map: dict[str, str] = {}
+        if req.use_subfolders_as_locations:
+            for f in files:
+                rel = f.path.relative_to(folder)
+                if len(rel.parts) > 1:
+                    subfolder_name = rel.parts[0]
+                else:
+                    subfolder_name = folder.name
+                subfolder_map[str(f.path)] = subfolder_name
+                db.create_location(subfolder_name)
+
         # Phase 2: Process
         processed = 0
         items_created = 0
@@ -122,6 +137,11 @@ async def _process_stream(
 
         for file_info in files:
             processed += 1
+
+            # Set location from subfolder if using that method
+            if req.use_subfolders_as_locations and str(file_info.path) in subfolder_map:
+                pipeline.current_location_id = subfolder_map[str(file_info.path)]
+
             yield _sse(ProcessStatus(
                 phase="processing",
                 total_files=len(files),
@@ -135,7 +155,7 @@ async def _process_stream(
 
             try:
                 result = await asyncio.to_thread(
-                    pipeline.process_single_file, file_info
+                    pipeline._process_single_file, file_info
                 )
                 if result and result.items_created > 0:
                     items_created += result.items_created

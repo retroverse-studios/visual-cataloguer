@@ -23,14 +23,24 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = 'folder' | 'preview' | 'options' | 'processing' | 'done';
+type Step = 'folder' | 'preview' | 'method' | 'options' | 'processing' | 'done';
+
+/**
+ * How the user organized their photos — determines how locations are assigned.
+ *
+ * 'dividers'   — QR codes / printed text in the photo stream mark location boundaries
+ *                (the pipeline's state machine handles this automatically)
+ * 'subfolders' — Each subfolder = a location, no divider detection needed
+ * 'single'     — All photos belong to one location (user provides the name)
+ */
+type OrganizationMethod = 'dividers' | 'subfolders' | 'single';
 
 export default function ImportWizard({ onClose, onComplete }: Props) {
   const [step, setStep] = useState<Step>('folder');
   const [folderPath, setFolderPath] = useState('');
   const [folderInfo, setFolderInfo] = useState<FolderInfo | null>(null);
-  const [defaultLocation, setDefaultLocation] = useState('');
-  const [useSubfoldersAsLocations, setUseSubfoldersAsLocations] = useState(false);
+  const [orgMethod, setOrgMethod] = useState<OrganizationMethod>('dividers');
+  const [singleLocation, setSingleLocation] = useState('');
   const [offline, setOffline] = useState(false);
   const [provider, setProvider] = useState('auto');
   const [status, setStatus] = useState<ProcessStatus | null>(null);
@@ -54,6 +64,12 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
       }
       const info: FolderInfo = await res.json();
       setFolderInfo(info);
+
+      // Smart default: if subfolders exist, suggest subfolder method
+      if (info.subfolder_count > 0) {
+        setOrgMethod('subfolders');
+      }
+
       setStep('preview');
     } catch (e) {
       setError((e as Error).message);
@@ -68,17 +84,28 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Build request based on organization method
+    const body: Record<string, unknown> = {
+      folder_path: folderPath.trim(),
+      offline,
+      provider: offline ? 'none' : provider,
+      resume: true,
+    };
+
+    if (orgMethod === 'single' && singleLocation.trim()) {
+      body.default_location = singleLocation.trim();
+      body.skip_divider_detection = true;
+    } else if (orgMethod === 'subfolders') {
+      body.use_subfolders_as_locations = true;
+      body.skip_divider_detection = true;
+    }
+    // 'dividers' — no overrides, pipeline handles it naturally
+
     try {
       const res = await fetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folder_path: folderPath.trim(),
-          default_location: defaultLocation.trim() || null,
-          offline,
-          provider,
-          resume: true,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -89,7 +116,6 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
-
       if (!reader) throw new Error('No response stream');
 
       let buffer = '';
@@ -122,7 +148,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
         setStep('done');
       }
     }
-  }, [folderPath, defaultLocation, offline, provider]);
+  }, [folderPath, singleLocation, orgMethod, offline, provider]);
 
   const handleCancel = () => {
     abortRef.current?.abort();
@@ -144,12 +170,12 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
         </div>
         <div className="modal-body">
 
-          {/* Step 1: Enter folder path */}
+          {/* Step 1: Folder path */}
           {step === 'folder' && (
             <div className="wizard-step">
               <p className="wizard-desc">
-                Enter the path to a folder of photos. The cataloguer will scan for images,
-                detect QR code dividers, and identify each item using AI.
+                Enter the path to a folder of photos. The cataloguer will scan for images
+                and identify each item.
               </p>
               <div className="form-group">
                 <label>Folder Path</label>
@@ -178,67 +204,122 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
               <div className="wizard-summary">
                 <div className="summary-stat">
                   <span className="summary-number">{folderInfo.image_count}</span>
-                  <span className="summary-label">images</span>
+                  <span className="summary-label">images found</span>
                 </div>
-                <div className="summary-stat">
-                  <span className="summary-number">{folderInfo.subfolder_count}</span>
-                  <span className="summary-label">subfolders</span>
-                </div>
+                {folderInfo.subfolder_count > 0 && (
+                  <div className="summary-stat">
+                    <span className="summary-number">{folderInfo.subfolder_count}</span>
+                    <span className="summary-label">subfolders</span>
+                  </div>
+                )}
               </div>
 
-              {folderInfo.subfolders.length > 0 && (
-                <div className="wizard-subfolders">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={useSubfoldersAsLocations}
-                      onChange={(e) => setUseSubfoldersAsLocations(e.target.checked)}
-                    />
-                    Use subfolder names as locations
-                  </label>
-                  <div className="subfolder-list">
-                    {folderInfo.subfolders.slice(0, 10).map((sf) => (
-                      <span key={sf} className="chip">{sf}</span>
-                    ))}
-                    {folderInfo.subfolders.length > 10 && (
-                      <span className="chip">+{folderInfo.subfolders.length - 10} more</span>
-                    )}
+              {folderInfo.image_count === 0 ? (
+                <>
+                  <div className="wizard-error">No images found in this folder.</div>
+                  <div className="form-actions">
+                    <button className="btn btn-outline" onClick={() => setStep('folder')}>Back</button>
                   </div>
+                </>
+              ) : (
+                <div className="form-actions">
+                  <button className="btn btn-primary" onClick={() => setStep('method')}>Continue</button>
+                  <button className="btn btn-outline" onClick={() => setStep('folder')}>Back</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Organization method */}
+          {step === 'method' && (
+            <div className="wizard-step">
+              <h3 className="wizard-subtitle">How are your photos organized?</h3>
+              <p className="wizard-desc">
+                This determines how items are assigned to storage locations.
+              </p>
+
+              <div className="method-options">
+                <label className={`method-card ${orgMethod === 'dividers' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="method"
+                    checked={orgMethod === 'dividers'}
+                    onChange={() => setOrgMethod('dividers')}
+                  />
+                  <div>
+                    <strong>Visual Dividers</strong>
+                    <p>I placed QR codes or printed labels between groups of items when photographing. The cataloguer will detect these and assign locations automatically.</p>
+                  </div>
+                </label>
+
+                {folderInfo && folderInfo.subfolder_count > 0 && (
+                  <label className={`method-card ${orgMethod === 'subfolders' ? 'active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="method"
+                      checked={orgMethod === 'subfolders'}
+                      onChange={() => setOrgMethod('subfolders')}
+                    />
+                    <div>
+                      <strong>Subfolder Names</strong>
+                      <p>Each subfolder represents a location. Items in <code>{folderInfo.subfolders[0] || 'Box-1'}</code>{folderInfo.subfolders.length > 1 ? `, ${folderInfo.subfolders[1]}` : ''}{folderInfo.subfolders.length > 2 ? `, etc.` : ''} will be grouped accordingly.</p>
+                    </div>
+                  </label>
+                )}
+
+                <label className={`method-card ${orgMethod === 'single' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="method"
+                    checked={orgMethod === 'single'}
+                    onChange={() => setOrgMethod('single')}
+                  />
+                  <div>
+                    <strong>Single Location</strong>
+                    <p>All photos in this folder belong to one location. I'll sort them later.</p>
+                  </div>
+                </label>
+              </div>
+
+              {orgMethod === 'single' && (
+                <div className="form-group">
+                  <label>Location Name</label>
+                  <input
+                    type="text"
+                    value={singleLocation}
+                    onChange={(e) => setSingleLocation(e.target.value)}
+                    placeholder="e.g. BOX-1, Shelf A, My Collection"
+                  />
                 </div>
               )}
 
-              <div className="form-group">
-                <label>Default Location (if no QR dividers found)</label>
-                <input
-                  type="text"
-                  value={defaultLocation}
-                  onChange={(e) => setDefaultLocation(e.target.value)}
-                  placeholder="e.g. BOX-1, SHELF-A, My Collection"
-                />
-                <span className="form-hint">Leave blank to auto-detect from QR codes</span>
-              </div>
-
               <div className="form-actions">
-                <button className="btn btn-primary" onClick={() => setStep('options')}>
-                  Configure &amp; Import
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setStep('options')}
+                  disabled={orgMethod === 'single' && !singleLocation.trim()}
+                >
+                  Continue
                 </button>
-                <button className="btn btn-outline" onClick={() => setStep('folder')}>Back</button>
+                <button className="btn btn-outline" onClick={() => setStep('preview')}>Back</button>
               </div>
             </div>
           )}
 
-          {/* Step 3: Options */}
+          {/* Step 4: AI options */}
           {step === 'options' && (
             <div className="wizard-step">
-              <h3 className="wizard-subtitle">Processing Options</h3>
+              <h3 className="wizard-subtitle">Identification</h3>
+              <p className="wizard-desc">
+                AI can identify titles, platforms, and condition. Or use offline mode for QR/OCR only.
+              </p>
 
               <div className="form-group">
                 <label>AI Provider</label>
-                <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                <select value={provider} onChange={(e) => setProvider(e.target.value)} disabled={offline}>
                   <option value="auto">Auto-detect (Ollama → Claude)</option>
                   <option value="claude">Claude</option>
                   <option value="ollama">Ollama (local)</option>
-                  <option value="none">None (offline)</option>
                 </select>
               </div>
 
@@ -248,19 +329,28 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
                   checked={offline}
                   onChange={(e) => setOffline(e.target.checked)}
                 />
-                Offline mode (QR/OCR only, no AI identification)
+                Offline mode (QR/OCR only — no AI identification)
               </label>
+
+              <div className="import-summary">
+                <strong>Ready to import:</strong>
+                <ul>
+                  <li>{folderInfo?.image_count} images from <code>{folderPath.split('/').pop()}</code></li>
+                  <li>Locations: {orgMethod === 'dividers' ? 'detected from visual dividers' : orgMethod === 'subfolders' ? `from ${folderInfo?.subfolder_count} subfolders` : `all → ${singleLocation}`}</li>
+                  <li>Identification: {offline ? 'OCR only (offline)' : `AI (${provider})`}</li>
+                </ul>
+              </div>
 
               <div className="form-actions">
                 <button className="btn btn-primary" onClick={handleStartProcessing}>
                   Start Import
                 </button>
-                <button className="btn btn-outline" onClick={() => setStep('preview')}>Back</button>
+                <button className="btn btn-outline" onClick={() => setStep('method')}>Back</button>
               </div>
             </div>
           )}
 
-          {/* Step 4: Processing */}
+          {/* Step 5: Processing */}
           {step === 'processing' && (
             <div className="wizard-step">
               <div className="progress-container">
@@ -280,7 +370,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
                 <div className="progress-stats">
                   <span>{status.items_created} items catalogued</span>
                   {status.locations_found.length > 0 && (
-                    <span>{status.locations_found.length} locations detected</span>
+                    <span>{status.locations_found.length} locations</span>
                   )}
                 </div>
               )}
@@ -291,7 +381,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
             </div>
           )}
 
-          {/* Step 5: Done */}
+          {/* Step 6: Done */}
           {step === 'done' && (
             <div className="wizard-step">
               {error ? (
@@ -302,11 +392,11 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
                   <div className="wizard-summary">
                     <div className="summary-stat">
                       <span className="summary-number">{status?.processed || 0}</span>
-                      <span className="summary-label">images processed</span>
+                      <span className="summary-label">processed</span>
                     </div>
                     <div className="summary-stat">
                       <span className="summary-number">{status?.items_created || 0}</span>
-                      <span className="summary-label">items catalogued</span>
+                      <span className="summary-label">items</span>
                     </div>
                     <div className="summary-stat">
                       <span className="summary-number">{status?.locations_found.length || 0}</span>
