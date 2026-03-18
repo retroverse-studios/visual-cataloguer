@@ -46,24 +46,26 @@ def health_check() -> dict[str, str]:
     return {"status": "healthy", "version": __version__}
 
 
-# Serve static files (frontend) if available
+# Serve static files (frontend) — check dist/ (Vite build) then static/ (legacy)
 STATIC_DIR = Path(__file__).parent / "static"
+DIST_DIR = STATIC_DIR / "dist"
+FRONTEND_DIR = DIST_DIR if DIST_DIR.exists() else STATIC_DIR
 
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index() -> FileResponse:
     """Serve the frontend index page."""
-    index_path = STATIC_DIR / "index.html"
+    index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    # Return a simple message if no frontend is built
     return HTMLResponse(  # type: ignore[return-value]
         content="""
         <html>
         <head><title>Visual Cataloguer API</title></head>
         <body>
             <h1>Visual Cataloguer API</h1>
-            <p>API is running. Frontend not available.</p>
+            <p>API is running. Frontend not built.</p>
+            <p>Run <code>cd frontend && npm run build</code> to build it.</p>
             <p>API docs: <a href="/docs">/docs</a></p>
         </body>
         </html>
@@ -71,9 +73,9 @@ async def serve_index() -> FileResponse:
     )
 
 
-# Mount assets directory if it exists
-if (STATIC_DIR / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+# Mount static assets from the frontend build
+if (FRONTEND_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
 
 # Re-export configure_database for CLI use

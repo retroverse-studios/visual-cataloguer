@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATABASE_PATH=/data/collection.db
+      # Optional: set your AI provider keys
+      # - ANTHROPIC_API_KEY=sk-ant-...
+    restart: unless-stopped
