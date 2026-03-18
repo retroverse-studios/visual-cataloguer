@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
+from cataloguer.api.routes.settings import resolve_setting
 from cataloguer.database.models import Database
 
 router = APIRouter()
@@ -82,12 +83,24 @@ async def _process_stream(
             offline_mode=req.offline,
         )
 
-        # If a provider is specified and not offline, set up identifier
+        # Set up AI identifier using resolved settings
         if not req.offline and req.provider != "none":
             try:
                 from cataloguer.processor.identifier import ItemIdentifier
 
-                identifier = ItemIdentifier(provider=req.provider)
+                # Resolve provider from request or settings
+                provider = req.provider
+                if provider == "auto":
+                    provider = resolve_setting(db, "ai_provider")
+                    if provider == "auto":
+                        provider = "claude"  # Final fallback
+
+                identifier = ItemIdentifier(
+                    provider=provider,
+                    model=resolve_setting(db, f"{provider}_model") or None,
+                    api_key=resolve_setting(db, "anthropic_api_key") or None,
+                    ollama_host=resolve_setting(db, "ollama_host"),
+                )
                 pipeline.identifier = identifier
             except Exception:
                 pass  # Fall back to offline

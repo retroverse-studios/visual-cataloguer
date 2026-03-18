@@ -7,6 +7,7 @@ import ItemModal from './components/ItemModal';
 import Pagination from './components/Pagination';
 import LocationsView from './components/LocationsView';
 import ImportWizard from './components/ImportWizard';
+import SettingsModal from './components/SettingsModal';
 
 type Tab = 'items' | 'locations';
 type Filter = 'all' | 'unlisted' | 'review';
@@ -24,6 +25,7 @@ export default function App() {
   const [platformFilter, setPlatformFilter] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [showImport, setShowImport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isEmpty, setIsEmpty] = useState(false);
 
   const PER_PAGE = 24;
@@ -102,6 +104,9 @@ export default function App() {
             <div className="header-actions">
               <button className="btn btn-primary btn-sm" onClick={() => setShowImport(true)}>
                 + Import
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => setShowSettings(true)}>
+                Settings
               </button>
               <StatsBar key={refreshKey} />
             </div>
@@ -197,6 +202,8 @@ export default function App() {
       {selectedItem && (
         <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} onSaved={handleItemSaved} />
       )}
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
 
       {showImport && (
         <ImportWizard

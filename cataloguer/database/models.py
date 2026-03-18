@@ -199,6 +199,13 @@ CREATE TABLE IF NOT EXISTS processing_log (
     processed_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- App settings (key-value store, env vars take priority)
+CREATE TABLE IF NOT EXISTS settings (
+    key             TEXT PRIMARY KEY,
+    value           TEXT,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_items_location ON items(location_id);
 CREATE INDEX IF NOT EXISTS idx_items_title ON items(title_guess);
@@ -529,3 +536,31 @@ class Database:
                 }
                 for row in rows
             ]
+
+    # ── Settings ──────────────────────────────────────────────────
+
+    def get_setting(self, key: str) -> str | None:
+        """Get a setting value. Returns None if not set."""
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+            return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str | None) -> None:
+        """Set a setting value. Pass None to delete."""
+        with self.connection() as conn:
+            if value is None:
+                conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at) "
+                    "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    (key, value),
+                )
+
+    def get_all_settings(self) -> dict[str, str]:
+        """Get all settings as a dict."""
+        with self.connection() as conn:
+            rows = conn.execute("SELECT key, value FROM settings").fetchall()
+            return {row["key"]: row["value"] for row in rows}
