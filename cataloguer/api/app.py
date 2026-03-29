@@ -75,6 +75,13 @@ async def serve_index() -> FileResponse:
     )
 
 
+# Serve favicon
+@app.get("/favicon.svg")
+async def serve_favicon() -> FileResponse:
+    """Serve the favicon."""
+    return FileResponse(FRONTEND_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
 # Mount static assets from the frontend build
 if (FRONTEND_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
