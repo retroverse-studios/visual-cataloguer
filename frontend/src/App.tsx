@@ -20,6 +20,8 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [platformFilter, setPlatformFilter] = useState('');
+  const [locations, setLocations] = useState<string[]>([]);
+  const [locationFilter, setLocationFilter] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -30,7 +32,7 @@ export default function App() {
 
   useEffect(() => {
     api.platforms().then((d) => setPlatforms(d.platforms)).catch(() => {});
-    api.stats().then(() => {}).catch(() => {});
+    api.locations().then((d) => setLocations(d.locations.map((l: { location_id: string }) => l.location_id).sort())).catch(() => {});
     fetch('/api/health').then(r => r.json()).then(d => setVersion(d.version || '')).catch(() => {});
   }, []);
 
@@ -44,6 +46,7 @@ export default function App() {
           page,
           per_page: PER_PAGE,
           ...(platformFilter ? { platform: platformFilter } : {}),
+          ...(locationFilter ? { location_id: locationFilter } : {}),
         });
         result = { items: searchData.results, total: searchData.total, page: searchData.page, per_page: PER_PAGE };
       } else if (filter === 'unlisted') {
@@ -52,12 +55,13 @@ export default function App() {
         const params: Record<string, string | number | boolean> = { page, per_page: PER_PAGE };
         if (filter === 'review') params.needs_review = true;
         if (platformFilter) params.platform = platformFilter;
+        if (locationFilter) params.location_id = locationFilter;
         result = await api.items(params);
       }
 
       setData(result);
       // Detect empty collection (no items, no search, no filters)
-      if (!search && filter === 'all' && !platformFilter && result.total === 0) {
+      if (!search && filter === 'all' && !platformFilter && !locationFilter && result.total === 0) {
         setIsEmpty(true);
       } else {
         setIsEmpty(false);
@@ -67,7 +71,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [search, filter, page, platformFilter]);
+  }, [search, filter, page, platformFilter, locationFilter]);
 
   useEffect(() => {
     loadItems();
@@ -139,6 +143,19 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+
+                {locations.length > 0 && (
+                  <select
+                    className="platform-select"
+                    value={locationFilter}
+                    onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All Locations</option>
+                    {locations.map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                )}
 
                 {platforms.length > 0 && (
                   <select
