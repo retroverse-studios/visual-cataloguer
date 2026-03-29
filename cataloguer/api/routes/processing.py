@@ -213,20 +213,43 @@ class AutoEnhanceRequest(BaseModel):
     ai_rotate: bool = False
 
 
+# Background job state — shared across requests
+_enhance_job: dict[str, object] = {
+    "running": False,
+    "total": 0,
+    "processed": 0,
+    "enhanced": 0,
+    "message": "",
+    "phase": "idle",  # idle, enhancing, complete, error
+}
+
+
+@router.get("/auto-enhance-status")
+def get_enhance_status() -> dict:
+    """Get the current status of the background auto-enhance job."""
+    return dict(_enhance_job)
+
+
 @router.post("/auto-enhance-all")
-async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> StreamingResponse:
-    """Auto-crop and deskew all item images. Streams progress as SSE."""
-    return StreamingResponse(
-        _enhance_stream(db, req),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> dict:
+    """Start background auto-enhance job. Returns immediately."""
+    if _enhance_job["running"]:
+        raise HTTPException(status_code=409, detail="Auto-enhance already running")
+
+    # Reset state
+    _enhance_job.update(
+        running=True, total=0, processed=0, enhanced=0,
+        message="Starting...", phase="enhancing",
     )
 
+    # Launch background task
+    asyncio.create_task(_enhance_background(db, req))
 
-async def _enhance_stream(
-    db: Database, req: AutoEnhanceRequest
-) -> AsyncGenerator[str, None]:
-    """Stream auto-enhance progress."""
+    return {"status": "started"}
+
+
+async def _enhance_background(db: Database, req: AutoEnhanceRequest) -> None:
+    """Run auto-enhance in the background, updating _enhance_job state."""
     from cataloguer.processor.image_ops import (
         auto_crop as do_crop,
         auto_rotate as do_rotate,
@@ -252,15 +275,13 @@ async def _enhance_stream(
                 ollama_host=resolve_setting(db, "ollama_host"),
             )
         except Exception as e:
-            yield f"data: {json.dumps({'phase': 'error', 'message': f'Failed to set up AI for rotation: {e}'})}\n\n"
+            _enhance_job.update(running=False, phase="error", message=f"Failed to set up AI: {e}")
             return
 
     try:
         item_ids = db.get_all_item_ids()
         total = len(item_ids)
-
-        yield f"data: {json.dumps({'phase': 'enhancing', 'total': total, 'processed': 0, 'enhanced': 0, 'message': f'Processing {total} items...'})}\n\n"
-        await asyncio.sleep(0)
+        _enhance_job.update(total=total, message=f"Processing {total} items...")
 
         enhanced_count = 0
         for i, item_id in enumerate(item_ids):
@@ -271,12 +292,11 @@ async def _enhance_stream(
 
                 image = await asyncio.to_thread(decode_jpeg, blob)
                 original_shape = image.shape
-                original_data = image.data.tobytes()[:64]  # Quick identity check
+                original_data = image.data.tobytes()[:64]
 
                 # AI-based rotation detection
                 if req.ai_rotate and identifier:
                     try:
-                        # Use a smaller image for the AI call
                         import cv2
                         h, w = image.shape[:2]
                         if max(h, w) > 1024:
@@ -291,14 +311,13 @@ async def _enhance_stream(
                         if result.rotation_needed:
                             image = rotate_by_degrees(image, result.rotation_needed)
                     except Exception:
-                        pass  # Skip AI rotation on failure
+                        pass
 
                 if req.auto_crop:
                     image = await asyncio.to_thread(do_crop, image)
                 if req.auto_rotate:
                     image = await asyncio.to_thread(do_rotate, image)
 
-                # Check if image actually changed
                 changed = image.shape != original_shape or image.data.tobytes()[:64] != original_data
                 if changed:
                     h, w = image.shape[:2]
@@ -311,16 +330,24 @@ async def _enhance_stream(
                     await asyncio.to_thread(db.replace_image, item_id, "thumb", thumb_jpeg, tw, th)
                     enhanced_count += 1
             except Exception:
-                pass  # Skip individual failures
+                pass
 
-            if (i + 1) % 10 == 0 or i == total - 1:
-                yield f"data: {json.dumps({'phase': 'enhancing', 'total': total, 'processed': i + 1, 'enhanced': enhanced_count, 'message': f'Processed {i + 1}/{total}...'})}\n\n"
-                await asyncio.sleep(0)
+            _enhance_job.update(
+                processed=i + 1,
+                enhanced=enhanced_count,
+                message=f"Processed {i + 1}/{total}...",
+            )
+            # Yield control so the status endpoint can respond
+            await asyncio.sleep(0)
 
-        yield f"data: {json.dumps({'phase': 'complete', 'total': total, 'processed': total, 'enhanced': enhanced_count, 'message': f'Done! Enhanced {enhanced_count} of {total} items.'})}\n\n"
+        _enhance_job.update(
+            running=False, phase="complete",
+            processed=total, enhanced=enhanced_count,
+            message=f"Done! Enhanced {enhanced_count} of {total} items.",
+        )
 
     except Exception as e:
-        yield f"data: {json.dumps({'phase': 'error', 'message': str(e)})}\n\n"
+        _enhance_job.update(running=False, phase="error", message=str(e))
 
 
 @router.post("/scan-folder")

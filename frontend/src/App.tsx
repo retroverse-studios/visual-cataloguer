@@ -7,6 +7,7 @@ import ItemModal from './components/ItemModal';
 import Pagination from './components/Pagination';
 import ImportWizard from './components/ImportWizard';
 import SettingsModal from './components/SettingsModal';
+import EnhanceProgress from './components/EnhanceProgress';
 
 type Filter = 'all' | 'unlisted' | 'review';
 
@@ -121,6 +122,7 @@ export default function App() {
               <StatsBar key={refreshKey} />
             </div>
           </div>
+          <EnhanceProgress />
         </div>
       </header>
 

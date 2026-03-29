@@ -156,6 +156,18 @@ export const api = {
       { method: 'POST' },
     ),
 
+  startAutoEnhanceAll: (opts: { auto_crop?: boolean; auto_rotate?: boolean; ai_rotate?: boolean } = {}) =>
+    fetchJSON<{ status: string }>(`${BASE}/auto-enhance-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_crop: true, auto_rotate: true, ...opts }),
+    }),
+
+  autoEnhanceStatus: () =>
+    fetchJSON<{ running: boolean; phase: string; total: number; processed: number; enhanced: number; message: string }>(
+      `${BASE}/auto-enhance-status`,
+    ),
+
   thumbUrl: (id: number) => `${BASE}/items/${id}/image/thumb`,
   fullUrl: (id: number) => `${BASE}/items/${id}/image/full`,
 };

@@ -61,10 +61,8 @@ export default function SettingsModal({ onClose }: Props) {
   const [saved, setSaved] = useState(false);
   const [normalising, setNormalising] = useState(false);
   const [normaliseResult, setNormaliseResult] = useState<string | null>(null);
-  const [enhancing, setEnhancing] = useState(false);
-  const [enhanceProgress, setEnhanceProgress] = useState('');
-  const [enhanceResult, setEnhanceResult] = useState<string | null>(null);
   const [aiRotate, setAiRotate] = useState(false);
+  const [enhanceMsg, setEnhanceMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -207,7 +205,7 @@ export default function SettingsModal({ onClose }: Props) {
         <div className="modal-body" style={{ borderTop: '1px solid var(--border)' }}>
           <h3 style={{ margin: '0 0 0.5rem' }}>Image Auto-Enhancement</h3>
           <p className="form-hint" style={{ margin: '0 0 0.75rem' }}>
-            Auto-crop and deskew all item images. Detects items on plain backgrounds and tightens the framing. New imports are enhanced automatically.
+            Auto-crop and deskew all item images. Detects items on plain backgrounds and tightens the framing. Runs in the background — progress shows in the header bar. New imports are enhanced automatically.
           </p>
           <label className="checkbox-label">
             <input type="checkbox" checked={aiRotate} onChange={(e) => setAiRotate(e.target.checked)} />
@@ -215,56 +213,21 @@ export default function SettingsModal({ onClose }: Props) {
           </label>
           <button
             className="btn btn-outline"
-            disabled={enhancing}
-            onClick={() => {
-              setEnhancing(true);
-              setEnhanceResult(null);
-              setEnhanceProgress('Starting...');
-              fetch('/api/auto-enhance-all', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auto_crop: true, auto_rotate: true, ai_rotate: aiRotate }),
-              }).then(async (res) => {
-                const reader = res.body?.getReader();
-                if (!reader) { setEnhancing(false); return; }
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let finished = false;
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  buffer += decoder.decode(value, { stream: true });
-                  const lines = buffer.split('\n');
-                  buffer = lines.pop() || '';
-                  for (const line of lines) {
-                    if (!line.startsWith('data: ')) continue;
-                    try {
-                      const data = JSON.parse(line.slice(6));
-                      if (data.phase === 'enhancing') {
-                        setEnhanceProgress(`${data.processed}/${data.total} (${data.enhanced} enhanced)`);
-                      } else if (data.phase === 'complete') {
-                        setEnhanceResult(data.message);
-                        setEnhancing(false);
-                        finished = true;
-                      } else if (data.phase === 'error') {
-                        setEnhanceResult(`Error: ${data.message}`);
-                        setEnhancing(false);
-                        finished = true;
-                      }
-                    } catch { /* skip */ }
-                  }
-                }
-                if (!finished) setEnhancing(false);
-              }).catch(() => {
-                setEnhanceResult('Failed to start auto-enhancement.');
-                setEnhancing(false);
-              });
+            onClick={async () => {
+              setEnhanceMsg(null);
+              try {
+                await api.startAutoEnhanceAll({ ai_rotate: aiRotate });
+                setEnhanceMsg('Started — check progress in the header bar.');
+              } catch (e) {
+                const msg = (e as Error).message;
+                setEnhanceMsg(msg.includes('409') ? 'Already running — check the header bar.' : `Failed: ${msg}`);
+              }
             }}
           >
-            {enhancing ? `Enhancing... ${enhanceProgress}` : 'Auto-Enhance All Items'}
+            Auto-Enhance All Items
           </button>
-          {enhanceResult && (
-            <p className="form-hint" style={{ marginTop: '0.5rem' }}>{enhanceResult}</p>
+          {enhanceMsg && (
+            <p className="form-hint" style={{ marginTop: '0.5rem' }}>{enhanceMsg}</p>
           )}
         </div>
 
