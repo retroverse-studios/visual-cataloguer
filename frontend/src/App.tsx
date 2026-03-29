@@ -150,9 +150,7 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-              </div>
 
-              <div className="filter-row">
                 {locations.length > 0 && (
                   <select
                     className="platform-select"
