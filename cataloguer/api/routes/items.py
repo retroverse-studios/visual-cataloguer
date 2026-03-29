@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 from cataloguer.api.deps import DbDep
+from cataloguer.platforms import normalise_platform
 
 router = APIRouter()
 
@@ -395,7 +396,7 @@ def reidentify_item(
         item_type=result.item_type.value,
         title_guess=result.title,
         title_confidence=title_confidence,
-        platform_guess=result.platform,
+        platform_guess=normalise_platform(result.platform),
         brand=result.brand,
         region=result.region,
         year=result.year,

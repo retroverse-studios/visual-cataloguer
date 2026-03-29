@@ -25,6 +25,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from cataloguer.database.models import Database, Item
+from cataloguer.platforms import normalise_platform
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
 from cataloguer.processor.identifier import (
     IdentificationResult,
@@ -428,7 +429,7 @@ class ProcessingPipeline:
             completeness=result.completeness or "unknown",
             ocr_text_raw=None,  # No OCR in AI-first mode
             title_guess=result.title,
-            platform_guess=result.platform,
+            platform_guess=normalise_platform(result.platform),
             brand=result.brand,
             region=result.region,
             year=result.year,

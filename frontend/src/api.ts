@@ -132,6 +132,12 @@ export const api = {
 
   platforms: () => fetchJSON<{ platforms: string[] }>(`${BASE}/platforms`),
 
+  normalisePlatforms: () =>
+    fetchJSON<{ status: string; total_updated: number; changes: { from: string; to: string; count: number }[] }>(
+      `${BASE}/platforms/normalise`,
+      { method: 'POST' },
+    ),
+
   thumbUrl: (id: number) => `${BASE}/items/${id}/image/thumb`,
   fullUrl: (id: number) => `${BASE}/items/${id}/image/full`,
 };

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 
 interface SettingsData {
   settings: Record<string, string>;
@@ -58,6 +59,8 @@ export default function SettingsModal({ onClose }: Props) {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [normalising, setNormalising] = useState(false);
+  const [normaliseResult, setNormaliseResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -160,6 +163,41 @@ export default function SettingsModal({ onClose }: Props) {
               </div>
             );
           })}
+        </div>
+
+        <div className="modal-body" style={{ borderTop: '1px solid var(--border)' }}>
+          <h3 style={{ margin: '0 0 0.5rem' }}>Platform Normalisation</h3>
+          <p className="form-hint" style={{ margin: '0 0 0.75rem' }}>
+            Standardise platform names across your collection (e.g. &quot;PlayStation 2&quot; &rarr; &quot;PS2&quot;, &quot;Nintendo Entertainment System&quot; &rarr; &quot;NES&quot;). New imports are normalised automatically.
+          </p>
+          <button
+            className="btn btn-outline"
+            disabled={normalising}
+            onClick={async () => {
+              setNormalising(true);
+              setNormaliseResult(null);
+              try {
+                const res = await api.normalisePlatforms();
+                if (res.changes.length === 0) {
+                  setNormaliseResult('All platforms are already normalised.');
+                } else {
+                  const summary = res.changes
+                    .map((c) => `${c.from} \u2192 ${c.to} (${c.count})`)
+                    .join(', ');
+                  setNormaliseResult(`Updated ${res.total_updated} items: ${summary}`);
+                }
+              } catch {
+                setNormaliseResult('Failed to normalise platforms.');
+              } finally {
+                setNormalising(false);
+              }
+            }}
+          >
+            {normalising ? 'Normalising...' : 'Normalise Platforms'}
+          </button>
+          {normaliseResult && (
+            <p className="form-hint" style={{ marginTop: '0.5rem' }}>{normaliseResult}</p>
+          )}
         </div>
 
         <div className="form-actions" style={{ padding: '0.75rem 1rem' }}>

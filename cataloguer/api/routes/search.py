@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
 from cataloguer.api.routes.items import ItemResponse, row_to_item
+from cataloguer.platforms import normalise_platform
 
 router = APIRouter()
 
@@ -110,6 +111,66 @@ def get_platforms(db: DbDep) -> dict[str, list[str]]:
 
         platforms = [row[0] for row in rows if row[0]]
         return {"platforms": platforms}
+
+
+@router.post("/platforms/normalise")
+def normalise_platforms(db: DbDep) -> dict:
+    """Normalise all platform names in existing items using the lookup table.
+
+    Updates platform_guess values to their canonical form. Returns a summary
+    of changes made.
+    """
+    changes: list[dict[str, str]] = []
+
+    with db.connection() as conn:
+        # Normalise platform_guess
+        rows = conn.execute(
+            "SELECT DISTINCT platform_guess FROM items WHERE platform_guess IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            original = row[0]
+            normalised = normalise_platform(original)
+            if normalised != original:
+                conn.execute(
+                    "UPDATE items SET platform_guess = ? WHERE platform_guess = ?",
+                    (normalised, original),
+                )
+                count = conn.execute(
+                    "SELECT changes()"
+                ).fetchone()[0]
+                changes.append({
+                    "from": original,
+                    "to": normalised,  # type: ignore[dict-item]
+                    "count": count,
+                })
+
+        # Normalise platform_manual
+        rows = conn.execute(
+            "SELECT DISTINCT platform_manual FROM items WHERE platform_manual IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            original = row[0]
+            normalised = normalise_platform(original)
+            if normalised != original:
+                conn.execute(
+                    "UPDATE items SET platform_manual = ? WHERE platform_manual = ?",
+                    (normalised, original),
+                )
+                count = conn.execute(
+                    "SELECT changes()"
+                ).fetchone()[0]
+                changes.append({
+                    "from": original,
+                    "to": f"{normalised} (manual)",  # type: ignore[dict-item]
+                    "count": count,
+                })
+
+    total_updated = sum(c["count"] for c in changes)  # type: ignore[arg-type]
+    return {
+        "status": "ok",
+        "total_updated": total_updated,
+        "changes": changes,
+    }
 
 
 @router.get("/completeness-options")
