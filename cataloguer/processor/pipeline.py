@@ -290,7 +290,10 @@ class ProcessingPipeline:
         """Process an image using AI-first classification and identification."""
         # Load and encode image
         image = self._load_image(image_file.path)
-        jpeg_data = self._encode_jpeg(image)
+
+        # Resize for AI API (Claude has 5MB limit for base64 images)
+        ai_image = self._resize_for_api(image)
+        jpeg_data = self._encode_jpeg(ai_image)
 
         # Single AI call for classification + identification
         result = self.identifier.classify_and_identify(jpeg_data)  # type: ignore[union-attr]
@@ -705,6 +708,14 @@ class ProcessingPipeline:
             if len(line) > 3 and not line.isdigit():
                 return line[:100]  # Limit length
         return None
+
+    def _resize_for_api(self, image: np.ndarray, max_dim: int = 2048) -> np.ndarray:
+        """Resize image to fit within API size limits (Claude 5MB base64 limit)."""
+        h, w = image.shape[:2]
+        if max(h, w) <= max_dim:
+            return image
+        scale = max_dim / max(h, w)
+        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
     def _create_thumbnail(self, image: np.ndarray) -> np.ndarray:
         """Create a thumbnail of the image."""
