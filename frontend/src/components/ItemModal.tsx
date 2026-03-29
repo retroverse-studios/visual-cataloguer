@@ -139,8 +139,14 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
               try {
                 const res = await fetch(`/api/items/${item.item_id}/ebay-description`, { method: 'POST' });
                 const data = await res.json();
-                const prefix = notes ? notes + '\n\n--- eBay Description ---\n' : '';
-                setNotes(prefix + data.description);
+                if (!res.ok) {
+                  alert('Failed: ' + (data.detail || 'Unknown error'));
+                  return;
+                }
+                const desc = data.description || '';
+                if (desc) {
+                  setNotes(notes ? notes + '\n\n--- eBay Description ---\n' + desc : desc);
+                }
               } catch (e) { console.error('Failed:', e); }
               finally { setGeneratingDesc(false); }
             }} disabled={generatingDesc}>
