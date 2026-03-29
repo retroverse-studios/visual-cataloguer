@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { api } from '../api';
 import type { Item, ItemUpdate } from '../api';
 
@@ -17,6 +17,11 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
   const [reidentifying, setReidentifying] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
+  const [imgKey, setImgKey] = useState(0);
+  const [editingImage, setEditingImage] = useState(false);
+  const [cropping, setCropping] = useState(false);
+
+  const bustCache = () => setImgKey((k) => k + 1);
 
   const handleSave = async () => {
     setSaving(true);
@@ -68,6 +73,43 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
     }
   };
 
+  const handleRotate = async (dir: 'cw' | 'ccw') => {
+    setEditingImage(true);
+    try {
+      await api.rotateImage(item.item_id, dir);
+      bustCache();
+    } catch (e) {
+      console.error('Rotate failed:', e);
+    } finally {
+      setEditingImage(false);
+    }
+  };
+
+  const handleAutoEnhance = async () => {
+    setEditingImage(true);
+    try {
+      await api.autoEnhance(item.item_id);
+      bustCache();
+    } catch (e) {
+      console.error('Auto-enhance failed:', e);
+    } finally {
+      setEditingImage(false);
+    }
+  };
+
+  const handleCropConfirm = async (x: number, y: number, w: number, h: number) => {
+    setEditingImage(true);
+    setCropping(false);
+    try {
+      await api.cropImage(item.item_id, x, y, w, h);
+      bustCache();
+    } catch (e) {
+      console.error('Crop failed:', e);
+    } finally {
+      setEditingImage(false);
+    }
+  };
+
   return (
     <div className="modal open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-content">
@@ -76,7 +118,32 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
           <button className="modal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="modal-body">
-          <img className="modal-img" src={api.fullUrl(item.item_id)} alt="Item" />
+          {cropping ? (
+            <CropOverlay
+              src={`${api.fullUrl(item.item_id)}?t=${imgKey}`}
+              onConfirm={handleCropConfirm}
+              onCancel={() => setCropping(false)}
+            />
+          ) : (
+            <img className="modal-img" src={`${api.fullUrl(item.item_id)}?t=${imgKey}`} alt="Item" />
+          )}
+
+          {/* Image editing toolbar */}
+          <div className="image-edit-bar">
+            <button className="btn btn-sm" onClick={() => handleRotate('ccw')} disabled={editingImage} title="Rotate Left">
+              &#x21BA; Left
+            </button>
+            <button className="btn btn-sm" onClick={() => handleRotate('cw')} disabled={editingImage} title="Rotate Right">
+              &#x21BB; Right
+            </button>
+            <button className="btn btn-sm" onClick={handleAutoEnhance} disabled={editingImage} title="Auto crop and deskew">
+              Auto Enhance
+            </button>
+            <button className="btn btn-sm" onClick={() => setCropping(!cropping)} disabled={editingImage}>
+              {cropping ? 'Cancel Crop' : 'Crop'}
+            </button>
+            {editingImage && <span className="spinner" />}
+          </div>
 
           {/* AI Info - hidden by default */}
           {item.ai_description && (
@@ -173,6 +240,117 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
             <button className="btn btn-outline" onClick={onClose}>Cancel</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ── Crop Overlay Component ── */
+
+interface CropOverlayProps {
+  src: string;
+  onConfirm: (x: number, y: number, w: number, h: number) => void;
+  onCancel: () => void;
+}
+
+function CropOverlay({ src, onConfirm, onCancel }: CropOverlayProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+  const [selection, setSelection] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const startRef = useRef({ x: 0, y: 0 });
+
+  const handleImgLoad = () => {
+    if (imgRef.current) {
+      setNaturalSize({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
+    }
+  };
+
+  const getRelPos = useCallback((e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
+      y: Math.max(0, Math.min(e.clientY - rect.top, rect.height)),
+    };
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const pos = getRelPos(e);
+    startRef.current = pos;
+    setSelection({ x: pos.x, y: pos.y, w: 0, h: 0 });
+    setDragging(true);
+  }, [getRelPos]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return;
+    const pos = getRelPos(e);
+    const sx = startRef.current.x;
+    const sy = startRef.current.y;
+    setSelection({
+      x: Math.min(sx, pos.x),
+      y: Math.min(sy, pos.y),
+      w: Math.abs(pos.x - sx),
+      h: Math.abs(pos.y - sy),
+    });
+  }, [dragging, getRelPos]);
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  const handleConfirm = () => {
+    if (!selection || !imgRef.current || selection.w < 10 || selection.h < 10) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // Map displayed coordinates to actual image pixel coordinates
+    const scaleX = naturalSize.w / rect.width;
+    const scaleY = naturalSize.h / rect.height;
+    onConfirm(
+      Math.round(selection.x * scaleX),
+      Math.round(selection.y * scaleY),
+      Math.round(selection.w * scaleX),
+      Math.round(selection.h * scaleY),
+    );
+  };
+
+  return (
+    <div className="crop-container">
+      <div
+        ref={containerRef}
+        className="crop-area"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        <img ref={imgRef} src={src} alt="Crop" onLoad={handleImgLoad} draggable={false} />
+        {selection && selection.w > 0 && (
+          <div
+            className="crop-selection"
+            style={{
+              left: selection.x,
+              top: selection.y,
+              width: selection.w,
+              height: selection.h,
+            }}
+          />
+        )}
+      </div>
+      <div className="crop-actions">
+        <span className="form-hint">Click and drag to select crop area</span>
+        <button
+          className="btn btn-sm btn-primary"
+          onClick={handleConfirm}
+          disabled={!selection || selection.w < 10 || selection.h < 10}
+        >
+          Apply Crop
+        </button>
+        <button className="btn btn-sm btn-outline" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );

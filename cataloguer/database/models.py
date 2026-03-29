@@ -537,6 +537,42 @@ class Database:
                 for row in rows
             ]
 
+    def replace_image(
+        self,
+        item_id: int,
+        image_type: str,
+        image_blob: bytes,
+        width: int,
+        height: int,
+    ) -> int:
+        """Replace an image for an item (delete old, insert new). Returns new image_id."""
+        with self.connection() as conn:
+            # Preserve is_cover from existing image
+            row = conn.execute(
+                "SELECT is_cover FROM item_images WHERE item_id = ? AND image_type = ? LIMIT 1",
+                (item_id, image_type),
+            ).fetchone()
+            is_cover = bool(row["is_cover"]) if row else (image_type == "full")
+
+            conn.execute(
+                "DELETE FROM item_images WHERE item_id = ? AND image_type = ?",
+                (item_id, image_type),
+            )
+            cursor = conn.execute(
+                """
+                INSERT INTO item_images (item_id, image_type, image_blob, width, height, file_size, is_cover)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (item_id, image_type, image_blob, width, height, len(image_blob), is_cover),
+            )
+            return cursor.lastrowid or 0
+
+    def get_all_item_ids(self) -> list[int]:
+        """Return all item IDs, ordered."""
+        with self.connection() as conn:
+            rows = conn.execute("SELECT item_id FROM items ORDER BY item_id").fetchall()
+            return [row["item_id"] for row in rows]
+
     # ── Settings ──────────────────────────────────────────────────
 
     def get_setting(self, key: str) -> str | None:

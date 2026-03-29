@@ -9,6 +9,15 @@ from PIL import Image
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
+from cataloguer.processor.image_ops import (
+    auto_crop,
+    auto_rotate,
+    create_thumbnail,
+    decode_jpeg,
+    encode_jpeg,
+    manual_crop,
+    rotate_90,
+)
 
 router = APIRouter()
 
@@ -169,6 +178,77 @@ def get_image_by_id(image_id: int, db: DbDep) -> Response:
             media_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"},
         )
+
+
+class RotateRequest(BaseModel):
+    """Request to rotate an image."""
+    direction: str  # "cw" or "ccw"
+
+
+class CropRequest(BaseModel):
+    """Request to crop an image."""
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class ImageEditResponse(BaseModel):
+    """Response after editing an image."""
+    item_id: int
+    width: int
+    height: int
+
+
+def _apply_and_save(
+    db: object, item_id: int, image: object
+) -> ImageEditResponse:
+    """Encode, save full + thumbnail, return dimensions."""
+    import numpy as np
+    img = image  # type: np.ndarray
+    h, w = img.shape[:2]
+    full_jpeg = encode_jpeg(img)
+    thumb = create_thumbnail(img)
+    th, tw = thumb.shape[:2]
+    thumb_jpeg = encode_jpeg(thumb)
+    db.replace_image(item_id, "full", full_jpeg, w, h)  # type: ignore[attr-defined]
+    db.replace_image(item_id, "thumb", thumb_jpeg, tw, th)  # type: ignore[attr-defined]
+    return ImageEditResponse(item_id=item_id, width=w, height=h)
+
+
+def _load_full_image(db: object, item_id: int) -> object:
+    """Load the full image for an item as a numpy array."""
+    blob = db.get_item_image(item_id, "full")  # type: ignore[attr-defined]
+    if not blob:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return decode_jpeg(blob)
+
+
+@router.post("/items/{item_id}/image/rotate", response_model=ImageEditResponse)
+def rotate_item_image(item_id: int, req: RotateRequest, db: DbDep) -> ImageEditResponse:
+    """Rotate an item image 90 degrees."""
+    if req.direction not in ("cw", "ccw"):
+        raise HTTPException(status_code=400, detail="direction must be 'cw' or 'ccw'")
+    image = _load_full_image(db, item_id)
+    rotated = rotate_90(image, req.direction)  # type: ignore[arg-type]
+    return _apply_and_save(db, item_id, rotated)
+
+
+@router.post("/items/{item_id}/image/crop", response_model=ImageEditResponse)
+def crop_item_image(item_id: int, req: CropRequest, db: DbDep) -> ImageEditResponse:
+    """Crop an item image to the specified rectangle."""
+    image = _load_full_image(db, item_id)
+    cropped = manual_crop(image, req.x, req.y, req.width, req.height)  # type: ignore[arg-type]
+    return _apply_and_save(db, item_id, cropped)
+
+
+@router.post("/items/{item_id}/image/auto-enhance", response_model=ImageEditResponse)
+def auto_enhance_item_image(item_id: int, db: DbDep) -> ImageEditResponse:
+    """Auto-crop and deskew an item image."""
+    image = _load_full_image(db, item_id)
+    enhanced = auto_crop(image)  # type: ignore[arg-type]
+    enhanced = auto_rotate(enhanced)
+    return _apply_and_save(db, item_id, enhanced)
 
 
 class ImageUploadResponse(BaseModel):

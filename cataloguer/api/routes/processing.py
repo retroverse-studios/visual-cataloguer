@@ -28,6 +28,7 @@ class ProcessRequest(BaseModel):
     offline: bool = False
     provider: str = "auto"
     resume: bool = True
+    auto_enhance: bool = True
 
 
 class ProcessStatus(BaseModel):
@@ -81,6 +82,7 @@ async def _process_stream(
             database=db,
             identifier=None,
             offline_mode=req.offline,
+            auto_enhance=req.auto_enhance,
         )
 
         # Set up AI identifier using resolved settings
@@ -199,6 +201,81 @@ async def _process_stream(
 def _sse(status: ProcessStatus) -> str:
     """Format a ProcessStatus as an SSE event."""
     return f"data: {json.dumps(status.model_dump())}\n\n"
+
+
+class AutoEnhanceRequest(BaseModel):
+    """Request to auto-enhance all item images."""
+
+    auto_crop: bool = True
+    auto_rotate: bool = True
+
+
+@router.post("/auto-enhance-all")
+async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> StreamingResponse:
+    """Auto-crop and deskew all item images. Streams progress as SSE."""
+    return StreamingResponse(
+        _enhance_stream(db, req),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _enhance_stream(
+    db: Database, req: AutoEnhanceRequest
+) -> AsyncGenerator[str, None]:
+    """Stream auto-enhance progress."""
+    from cataloguer.processor.image_ops import (
+        auto_crop as do_crop,
+        auto_rotate as do_rotate,
+        create_thumbnail,
+        decode_jpeg,
+        encode_jpeg,
+    )
+
+    try:
+        item_ids = db.get_all_item_ids()
+        total = len(item_ids)
+
+        yield f"data: {json.dumps({'phase': 'enhancing', 'total': total, 'processed': 0, 'enhanced': 0, 'message': f'Processing {total} items...'})}\n\n"
+        await asyncio.sleep(0)
+
+        enhanced_count = 0
+        for i, item_id in enumerate(item_ids):
+            try:
+                blob = db.get_item_image(item_id, "full")
+                if not blob:
+                    continue
+
+                image = await asyncio.to_thread(decode_jpeg, blob)
+                original_shape = image.shape
+
+                if req.auto_crop:
+                    image = await asyncio.to_thread(do_crop, image)
+                if req.auto_rotate:
+                    image = await asyncio.to_thread(do_rotate, image)
+
+                # Only save if something changed
+                if image.shape != original_shape:
+                    h, w = image.shape[:2]
+                    full_jpeg = await asyncio.to_thread(encode_jpeg, image)
+                    thumb = await asyncio.to_thread(create_thumbnail, image)
+                    th, tw = thumb.shape[:2]
+                    thumb_jpeg = await asyncio.to_thread(encode_jpeg, thumb)
+
+                    await asyncio.to_thread(db.replace_image, item_id, "full", full_jpeg, w, h)
+                    await asyncio.to_thread(db.replace_image, item_id, "thumb", thumb_jpeg, tw, th)
+                    enhanced_count += 1
+            except Exception:
+                pass  # Skip individual failures
+
+            if (i + 1) % 10 == 0 or i == total - 1:
+                yield f"data: {json.dumps({'phase': 'enhancing', 'total': total, 'processed': i + 1, 'enhanced': enhanced_count, 'message': f'Processed {i + 1}/{total}...'})}\n\n"
+                await asyncio.sleep(0)
+
+        yield f"data: {json.dumps({'phase': 'complete', 'total': total, 'processed': total, 'enhanced': enhanced_count, 'message': f'Done! Enhanced {enhanced_count} of {total} items.'})}\n\n"
+
+    except Exception as e:
+        yield f"data: {json.dumps({'phase': 'error', 'message': str(e)})}\n\n"
 
 
 @router.post("/scan-folder")

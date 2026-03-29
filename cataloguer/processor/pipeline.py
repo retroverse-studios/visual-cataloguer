@@ -27,6 +27,7 @@ from tqdm import tqdm
 from cataloguer.database.models import Database, Item
 from cataloguer.platforms import normalise_platform
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
+from cataloguer.processor.image_ops import auto_crop, auto_rotate
 from cataloguer.processor.identifier import (
     IdentificationResult,
     ItemIdentifier,
@@ -92,6 +93,7 @@ class ProcessingPipeline:
         offline_mode: bool = False,
         jpeg_quality: int = 85,
         thumbnail_size: int = 400,
+        auto_enhance: bool = True,
     ) -> None:
         """Initialize the pipeline.
 
@@ -103,6 +105,7 @@ class ProcessingPipeline:
                          If False (default), use AI for all classification and identification.
             jpeg_quality: JPEG quality for stored images (0-100)
             thumbnail_size: Max dimension for thumbnails
+            auto_enhance: If True, auto-crop and deskew item images
         """
         self.db = database
         self.classifier = classifier or ImageClassifier()
@@ -110,6 +113,7 @@ class ProcessingPipeline:
         self.offline_mode = offline_mode
         self.jpeg_quality = jpeg_quality
         self.thumbnail_size = thumbnail_size
+        self.auto_enhance = auto_enhance
 
         # State machine
         self.current_location_id: str | None = None
@@ -372,6 +376,11 @@ class ProcessingPipeline:
                 self.current_location_id, label="Auto-created (missing divider)"
             )
 
+        # Auto-enhance: crop and deskew
+        if self.auto_enhance:
+            image = auto_crop(image)
+            image = auto_rotate(image)
+
         # Create thumbnail
         thumbnail = self._create_thumbnail(image)
 
@@ -540,6 +549,11 @@ class ProcessingPipeline:
 
         # Load the image
         image = self._load_image(image_file.path)
+
+        # Auto-enhance: crop and deskew
+        if self.auto_enhance:
+            image = auto_crop(image)
+            image = auto_rotate(image)
 
         # Run OCR to extract text
         ocr_text = self._extract_text(image)

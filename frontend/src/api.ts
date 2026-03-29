@@ -138,6 +138,24 @@ export const api = {
       { method: 'POST' },
     ),
 
+  rotateImage: (id: number, direction: 'cw' | 'ccw') =>
+    fetchJSON<{ item_id: number; width: number; height: number }>(
+      `${BASE}/items/${id}/image/rotate`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ direction }) },
+    ),
+
+  cropImage: (id: number, x: number, y: number, width: number, height: number) =>
+    fetchJSON<{ item_id: number; width: number; height: number }>(
+      `${BASE}/items/${id}/image/crop`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x, y, width, height }) },
+    ),
+
+  autoEnhance: (id: number) =>
+    fetchJSON<{ item_id: number; width: number; height: number }>(
+      `${BASE}/items/${id}/image/auto-enhance`,
+      { method: 'POST' },
+    ),
+
   thumbUrl: (id: number) => `${BASE}/items/${id}/image/thumb`,
   fullUrl: (id: number) => `${BASE}/items/${id}/image/full`,
 };
