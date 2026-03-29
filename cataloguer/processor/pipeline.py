@@ -27,7 +27,7 @@ from tqdm import tqdm
 from cataloguer.database.models import Database, Item
 from cataloguer.platforms import normalise_platform
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
-from cataloguer.processor.image_ops import auto_crop, auto_rotate
+from cataloguer.processor.image_ops import auto_crop, auto_rotate, rotate_by_degrees
 from cataloguer.processor.identifier import (
     IdentificationResult,
     ItemIdentifier,
@@ -94,6 +94,7 @@ class ProcessingPipeline:
         jpeg_quality: int = 85,
         thumbnail_size: int = 400,
         auto_enhance: bool = True,
+        ai_rotate: bool = False,
     ) -> None:
         """Initialize the pipeline.
 
@@ -106,6 +107,7 @@ class ProcessingPipeline:
             jpeg_quality: JPEG quality for stored images (0-100)
             thumbnail_size: Max dimension for thumbnails
             auto_enhance: If True, auto-crop and deskew item images
+            ai_rotate: If True, apply LLM-recommended rotation (from the existing AI call)
         """
         self.db = database
         self.classifier = classifier or ImageClassifier()
@@ -114,6 +116,7 @@ class ProcessingPipeline:
         self.jpeg_quality = jpeg_quality
         self.thumbnail_size = thumbnail_size
         self.auto_enhance = auto_enhance
+        self.ai_rotate = ai_rotate
 
         # State machine
         self.current_location_id: str | None = None
@@ -375,6 +378,10 @@ class ProcessingPipeline:
             self.db.create_location(
                 self.current_location_id, label="Auto-created (missing divider)"
             )
+
+        # AI-recommended rotation (uses existing AI call, no extra cost)
+        if self.ai_rotate and result.rotation_needed:
+            image = rotate_by_degrees(image, result.rotation_needed)
 
         # Auto-enhance: crop and deskew
         if self.auto_enhance:

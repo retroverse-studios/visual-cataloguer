@@ -64,6 +64,7 @@ export default function SettingsModal({ onClose }: Props) {
   const [enhancing, setEnhancing] = useState(false);
   const [enhanceProgress, setEnhanceProgress] = useState('');
   const [enhanceResult, setEnhanceResult] = useState<string | null>(null);
+  const [aiRotate, setAiRotate] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -208,6 +209,10 @@ export default function SettingsModal({ onClose }: Props) {
           <p className="form-hint" style={{ margin: '0 0 0.75rem' }}>
             Auto-crop and deskew all item images. Detects items on plain backgrounds and tightens the framing. New imports are enhanced automatically.
           </p>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={aiRotate} onChange={(e) => setAiRotate(e.target.checked)} />
+            Use AI to detect and fix orientation (costs one LLM call per item)
+          </label>
           <button
             className="btn btn-outline"
             disabled={enhancing}
@@ -218,7 +223,7 @@ export default function SettingsModal({ onClose }: Props) {
               fetch('/api/auto-enhance-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auto_crop: true, auto_rotate: true }),
+                body: JSON.stringify({ auto_crop: true, auto_rotate: true, ai_rotate: aiRotate }),
               }).then(async (res) => {
                 const reader = res.body?.getReader();
                 if (!reader) { setEnhancing(false); return; }

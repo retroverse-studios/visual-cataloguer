@@ -58,6 +58,7 @@ class UnifiedResult:
     condition_notes: str | None = None
     description: str | None = None
     confidence: str | None = None
+    rotation_needed: int = 0  # 0, 90, 180, 270 degrees clockwise
 
     raw_response: dict[str, Any] = field(default_factory=dict)
 
@@ -150,8 +151,14 @@ For an ITEM (include all identification details):
   "year": "Release year or null",
   "condition_notes": "Physical condition observations (scratches, wear, etc.) or null",
   "description": "Brief description of what you see",
-  "confidence": "high, medium, or low"
+  "confidence": "high, medium, or low",
+  "rotation_needed": 0
 }
+
+The rotation_needed field indicates how many degrees CLOCKWISE the image needs to
+be rotated to appear upright (text readable left-to-right, item right-way-up).
+Values: 0 (already correct), 90, 180, or 270. Look at any visible text, logos,
+or the natural orientation of the item to determine this.
 
 Important:
 - Location dividers are SIMPLE labels - just text/QR on paper. Not product boxes.
@@ -538,6 +545,15 @@ Respond ONLY with the JSON object."""
         except ValueError:
             item_type = ItemType.OTHER
 
+        # Parse rotation - must be 0, 90, 180, or 270
+        rotation_raw = data.get("rotation_needed", 0)
+        try:
+            rotation = int(rotation_raw)
+        except (TypeError, ValueError):
+            rotation = 0
+        if rotation not in (0, 90, 180, 270):
+            rotation = 0
+
         return UnifiedResult(
             image_type="item",
             item_type=item_type,
@@ -551,5 +567,6 @@ Respond ONLY with the JSON object."""
             condition_notes=data.get("condition_notes"),
             description=data.get("description"),
             confidence=data.get("confidence"),
+            rotation_needed=rotation,
             raw_response=data,
         )

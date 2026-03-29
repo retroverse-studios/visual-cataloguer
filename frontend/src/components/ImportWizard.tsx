@@ -46,6 +46,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
   const [status, setStatus] = useState<ProcessStatus | null>(null);
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [aiRotate, setAiRotate] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const handleScanFolder = async () => {
@@ -90,6 +91,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
       offline,
       provider: offline ? 'none' : provider,
       resume: true,
+      ai_rotate: !offline && aiRotate,
     };
 
     if (orgMethod === 'single' && singleLocation.trim()) {
@@ -148,7 +150,7 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
         setStep('done');
       }
     }
-  }, [folderPath, singleLocation, orgMethod, offline, provider]);
+  }, [folderPath, singleLocation, orgMethod, offline, provider, aiRotate]);
 
   const handleCancel = () => {
     abortRef.current?.abort();
@@ -331,6 +333,17 @@ export default function ImportWizard({ onClose, onComplete }: Props) {
                 />
                 Offline mode (QR/OCR only — no AI identification)
               </label>
+
+              {!offline && (
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={aiRotate}
+                    onChange={(e) => setAiRotate(e.target.checked)}
+                  />
+                  AI orientation fix (rotate sideways/upside-down items — no extra cost, uses existing AI call)
+                </label>
+              )}
 
               <div className="import-summary">
                 <strong>Ready to import:</strong>

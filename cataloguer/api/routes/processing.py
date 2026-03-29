@@ -29,6 +29,7 @@ class ProcessRequest(BaseModel):
     provider: str = "auto"
     resume: bool = True
     auto_enhance: bool = True
+    ai_rotate: bool = False
 
 
 class ProcessStatus(BaseModel):
@@ -83,6 +84,7 @@ async def _process_stream(
             identifier=None,
             offline_mode=req.offline,
             auto_enhance=req.auto_enhance,
+            ai_rotate=req.ai_rotate,
         )
 
         # Set up AI identifier using resolved settings
@@ -208,6 +210,7 @@ class AutoEnhanceRequest(BaseModel):
 
     auto_crop: bool = True
     auto_rotate: bool = True
+    ai_rotate: bool = False
 
 
 @router.post("/auto-enhance-all")
@@ -230,7 +233,27 @@ async def _enhance_stream(
         create_thumbnail,
         decode_jpeg,
         encode_jpeg,
+        rotate_by_degrees,
     )
+
+    # Set up AI identifier if AI rotation requested
+    identifier = None
+    if req.ai_rotate:
+        try:
+            from cataloguer.processor.identifier import ItemIdentifier
+
+            provider = resolve_setting(db, "ai_provider")
+            if provider == "auto":
+                provider = "claude"
+            identifier = ItemIdentifier(
+                provider=provider,
+                model=resolve_setting(db, f"{provider}_model") or None,
+                api_key=resolve_setting(db, "anthropic_api_key") or None,
+                ollama_host=resolve_setting(db, "ollama_host"),
+            )
+        except Exception as e:
+            yield f"data: {json.dumps({'phase': 'error', 'message': f'Failed to set up AI for rotation: {e}'})}\n\n"
+            return
 
     try:
         item_ids = db.get_all_item_ids()
@@ -248,14 +271,36 @@ async def _enhance_stream(
 
                 image = await asyncio.to_thread(decode_jpeg, blob)
                 original_shape = image.shape
+                original_data = image.data.tobytes()[:64]  # Quick identity check
+
+                # AI-based rotation detection
+                if req.ai_rotate and identifier:
+                    try:
+                        # Use a smaller image for the AI call
+                        import cv2
+                        h, w = image.shape[:2]
+                        if max(h, w) > 1024:
+                            scale = 1024 / max(h, w)
+                            small = cv2.resize(image, None, fx=scale, fy=scale)
+                        else:
+                            small = image
+                        small_jpeg = await asyncio.to_thread(encode_jpeg, small, 70)
+                        result = await asyncio.to_thread(
+                            identifier.classify_and_identify, small_jpeg
+                        )
+                        if result.rotation_needed:
+                            image = rotate_by_degrees(image, result.rotation_needed)
+                    except Exception:
+                        pass  # Skip AI rotation on failure
 
                 if req.auto_crop:
                     image = await asyncio.to_thread(do_crop, image)
                 if req.auto_rotate:
                     image = await asyncio.to_thread(do_rotate, image)
 
-                # Only save if something changed
-                if image.shape != original_shape:
+                # Check if image actually changed
+                changed = image.shape != original_shape or image.data.tobytes()[:64] != original_data
+                if changed:
                     h, w = image.shape[:2]
                     full_jpeg = await asyncio.to_thread(encode_jpeg, image)
                     thumb = await asyncio.to_thread(create_thumbnail, image)

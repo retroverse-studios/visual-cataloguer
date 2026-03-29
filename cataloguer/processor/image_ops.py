@@ -136,6 +136,20 @@ def rotate_90(image: np.ndarray, direction: str) -> np.ndarray:
         raise ValueError(f"Invalid direction: {direction!r}, must be 'cw' or 'ccw'")
 
 
+def rotate_by_degrees(image: np.ndarray, degrees: int) -> np.ndarray:
+    """Rotate image by exactly 0, 90, 180, or 270 degrees clockwise.
+
+    Returns the image unchanged if degrees is 0 or invalid.
+    """
+    if degrees == 90:
+        return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+    elif degrees == 180:
+        return cv2.rotate(image, cv2.ROTATE_180)
+    elif degrees == 270:
+        return cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return image
+
+
 def manual_crop(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
     """Crop image to the specified rectangle.
 
