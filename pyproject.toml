@@ -52,6 +52,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["cataloguer"]
 
+[tool.hatch.build]
+artifacts = ["cataloguer/api/static/dist/**"]
+
 [tool.hatch.build.targets.sdist]
 exclude = [
     "tests/",
