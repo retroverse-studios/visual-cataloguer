@@ -393,6 +393,10 @@ header h1 { font-size: 1.25rem; font-weight: 600; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.ebay-desc-box { margin-top: 0.75rem; }
+.ebay-desc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
+.ebay-desc-box textarea { width: 100%; font-size: 0.8rem; }
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;

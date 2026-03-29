@@ -411,3 +411,46 @@ def reidentify_item(
             "SELECT * FROM items WHERE item_id = ?", (item_id,)
         ).fetchone()
         return row_to_item(dict(updated_row))
+
+
+@router.post("/{item_id}/ebay-description")
+def generate_ebay_description(item_id: int, db: DbDep) -> dict[str, str]:
+    """Generate an eBay listing description for an item using AI."""
+    import anthropic
+
+    item = db.get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    title = item.title_manual or item.title_guess or "Unknown Item"
+    platform = item.platform_manual or item.platform_guess or ""
+    brand = item.brand or ""
+    region = item.region or ""
+    year = item.year or ""
+    completeness = item.completeness or "unknown"
+    condition_notes = item.condition_notes or ""
+
+    prompt = f"""Write a concise eBay listing description for this item. Be factual, professional, and highlight key selling points. Include condition notes if relevant. Do not invent details not provided.
+
+Title: {title}
+Platform: {platform}
+Brand: {brand}
+Region: {region}
+Year: {year}
+Completeness: {completeness}
+Condition Notes: {condition_notes}
+
+Write the description in plain text, suitable for an eBay listing. Keep it to 3-5 short paragraphs."""
+
+    try:
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        description = message.content[0].text if message.content else ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {e}") from None
+
+    return {"description": description}

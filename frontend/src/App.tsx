@@ -5,15 +5,12 @@ import StatsBar from './components/StatsBar';
 import ItemCard from './components/ItemCard';
 import ItemModal from './components/ItemModal';
 import Pagination from './components/Pagination';
-import LocationsView from './components/LocationsView';
 import ImportWizard from './components/ImportWizard';
 import SettingsModal from './components/SettingsModal';
 
-type Tab = 'items' | 'locations';
 type Filter = 'all' | 'unlisted' | 'review';
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('items');
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -73,8 +70,8 @@ export default function App() {
   }, [search, filter, page, platformFilter]);
 
   useEffect(() => {
-    if (tab === 'items') loadItems();
-  }, [tab, loadItems, refreshKey]);
+    loadItems();
+  }, [loadItems, refreshKey]);
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -118,17 +115,6 @@ export default function App() {
       </header>
 
       <main className="container">
-        <div className="tabs">
-          <button className={`tab ${tab === 'items' ? 'active' : ''}`} onClick={() => setTab('items')}>
-            Items
-          </button>
-          <button className={`tab ${tab === 'locations' ? 'active' : ''}`} onClick={() => setTab('locations')}>
-            Locations
-          </button>
-        </div>
-
-        {tab === 'items' && (
-          <>
             <div className="toolbar">
               <div className="search-box">
                 <input
@@ -196,10 +182,6 @@ export default function App() {
                 />
               </>
             )}
-          </>
-        )}
-
-        {tab === 'locations' && <LocationsView onItemClick={setSelectedItem} />}
       </main>
 
       {selectedItem && (
