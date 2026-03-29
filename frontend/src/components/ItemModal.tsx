@@ -104,6 +104,10 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
               <input type="text" value={platform} onChange={(e) => setPlatform(e.target.value)} />
             </div>
             <div className="form-group">
+              <label>Location</label>
+              <input type="text" value={item.location_id || ''} readOnly className="readonly" />
+            </div>
+            <div className="form-group">
               <label>Completeness</label>
               <select value={completeness} onChange={(e) => setCompleteness(e.target.value)}>
                 <option value="unknown">Unknown</option>

@@ -26,6 +26,7 @@ export default function ItemCard({ item, onClick }: Props) {
         <div className="card-meta">
           <span>{platform}</span>
           <span>
+            {item.location_id && <span className="badge">{item.location_id}</span>}
             {item.ebay_listed && <span className="badge badge-listed">Listed</span>}
             {item.needs_review && <span className="badge badge-review">Review</span>}
           </span>
