@@ -51,10 +51,10 @@ def search_items(
     with db.connection() as conn:
         # Build search conditions
         conditions = [
-            "(title_guess LIKE ? OR title_manual LIKE ? OR ocr_text_raw LIKE ? OR notes LIKE ?)"
+            "(title_guess LIKE ? OR title_manual LIKE ? OR ocr_text_raw LIKE ? OR notes LIKE ? OR platform_guess LIKE ? OR platform_manual LIKE ? OR brand LIKE ? OR location_id LIKE ?)"
         ]
         search_term = f"%{q}%"
-        params: list[str | int] = [search_term, search_term, search_term, search_term]
+        params: list[str | int] = [search_term] * 8
 
         if location_id:
             conditions.append("location_id = ?")

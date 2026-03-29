@@ -27,24 +27,11 @@ class LocationListResponse(BaseModel):
     total: int
 
 
-class LocationItemResponse(BaseModel):
-    """Simplified item response for location listings."""
-
-    item_id: int
-    title_guess: str | None
-    title_manual: str | None
-    platform_guess: str | None
-    platform_manual: str | None
-    completeness: str
-    ebay_listed: bool
-    needs_review: bool
-
-
 class LocationItemsResponse(BaseModel):
     """Response model for items in a location."""
 
     location_id: str
-    items: list[LocationItemResponse]
+    items: list[dict]
     total: int
     page: int
     per_page: int
@@ -129,12 +116,11 @@ def get_location_items(
             "SELECT COUNT(*) FROM items WHERE location_id = ?", (location_id,)
         ).fetchone()[0]
 
-        # Get paginated items
+        # Get paginated items (full item data)
         offset = (page - 1) * per_page
         rows = conn.execute(
             """
-            SELECT item_id, title_guess, title_manual, platform_guess, platform_manual,
-                   completeness, ebay_listed, needs_review
+            SELECT *
             FROM items
             WHERE location_id = ?
             ORDER BY item_id
@@ -143,19 +129,11 @@ def get_location_items(
             (location_id, per_page, offset),
         ).fetchall()
 
-        items = [
-            LocationItemResponse(
-                item_id=row["item_id"],
-                title_guess=row["title_guess"],
-                title_manual=row["title_manual"],
-                platform_guess=row["platform_guess"],
-                platform_manual=row["platform_manual"],
-                completeness=row["completeness"] or "unknown",
-                ebay_listed=bool(row["ebay_listed"]),
-                needs_review=bool(row["needs_review"]),
-            )
-            for row in rows
-        ]
+        items = [dict(row) for row in rows]
+        for item in items:
+            for key, value in item.items():
+                if hasattr(value, "isoformat"):
+                    item[key] = value.isoformat() if value else None
 
         return LocationItemsResponse(
             location_id=location_id,
