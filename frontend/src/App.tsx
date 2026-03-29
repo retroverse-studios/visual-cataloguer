@@ -50,7 +50,11 @@ export default function App() {
         });
         result = { items: searchData.results, total: searchData.total, page: searchData.page, per_page: PER_PAGE };
       } else if (filter === 'unlisted') {
-        result = await api.itemsUnlisted(page, PER_PAGE);
+        const params: Record<string, string | number | boolean> = { page, per_page: PER_PAGE };
+        params.ebay_listed = false;
+        if (platformFilter) params.platform = platformFilter;
+        if (locationFilter) params.location_id = locationFilter;
+        result = await api.items(params);
       } else {
         const params: Record<string, string | number | boolean> = { page, per_page: PER_PAGE };
         if (filter === 'review') params.needs_review = true;
@@ -87,6 +91,8 @@ export default function App() {
     setPage(1);
     setSearch('');
     setSearchInput('');
+    setLocationFilter('');
+    setPlatformFilter('');
   };
 
   const handlePageChange = (p: number) => {
@@ -129,6 +135,7 @@ export default function App() {
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 />
                 <button onClick={handleSearch}>Search</button>
+                {search && <button onClick={() => { setSearch(''); setSearchInput(''); setPage(1); }}>Clear</button>}
               </div>
 
               <div className="filter-row">
@@ -143,12 +150,14 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+              </div>
 
+              <div className="filter-row">
                 {locations.length > 0 && (
                   <select
                     className="platform-select"
                     value={locationFilter}
-                    onChange={(e) => { setLocationFilter(e.target.value); setPage(1); }}
+                    onChange={(e) => { setLocationFilter(e.target.value); setFilter('all'); setPage(1); }}
                   >
                     <option value="">All Locations</option>
                     {locations.map((l) => (
@@ -161,7 +170,7 @@ export default function App() {
                   <select
                     className="platform-select"
                     value={platformFilter}
-                    onChange={(e) => { setPlatformFilter(e.target.value); setPage(1); }}
+                    onChange={(e) => { setPlatformFilter(e.target.value); setFilter('all'); setPage(1); }}
                   >
                     <option value="">All Platforms</option>
                     {platforms.map((p) => (
