@@ -16,9 +16,7 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [reidentifying, setReidentifying] = useState(false);
   const [showAi, setShowAi] = useState(false);
-  const [ebayDesc, setEbayDesc] = useState('');
   const [generatingDesc, setGeneratingDesc] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -134,24 +132,6 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
             </div>
           )}
 
-          {/* eBay Description */}
-          {ebayDesc && (
-            <div className="ebay-desc-box">
-              <div className="ebay-desc-header">
-                <label>eBay Description</label>
-                <div>
-                  <button className="btn btn-sm btn-primary" onClick={() => {
-                    navigator.clipboard.writeText(ebayDesc);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}>{copied ? 'Copied!' : 'Copy'}</button>
-                  <button className="btn btn-sm btn-outline" onClick={() => setEbayDesc('')} style={{ marginLeft: '0.25rem' }}>Close</button>
-                </div>
-              </div>
-              <textarea value={ebayDesc} readOnly className="readonly" rows={8} />
-            </div>
-          )}
-
           {/* Re-identify & eBay */}
           <div className="reidentify-bar">
             <button className="btn btn-sm" onClick={async () => {
@@ -159,7 +139,8 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
               try {
                 const res = await fetch(`/api/items/${item.item_id}/ebay-description`, { method: 'POST' });
                 const data = await res.json();
-                setEbayDesc(data.description);
+                const prefix = notes ? notes + '\n\n--- eBay Description ---\n' : '';
+                setNotes(prefix + data.description);
               } catch (e) { console.error('Failed:', e); }
               finally { setGeneratingDesc(false); }
             }} disabled={generatingDesc}>
