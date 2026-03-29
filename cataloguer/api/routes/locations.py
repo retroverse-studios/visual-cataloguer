@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
+from cataloguer.api.routes.items import ItemResponse, row_to_item
 
 router = APIRouter()
 
@@ -31,7 +32,7 @@ class LocationItemsResponse(BaseModel):
     """Response model for items in a location."""
 
     location_id: str
-    items: list[dict]
+    items: list[ItemResponse]
     total: int
     page: int
     per_page: int
@@ -129,11 +130,7 @@ def get_location_items(
             (location_id, per_page, offset),
         ).fetchall()
 
-        items = [dict(row) for row in rows]
-        for item in items:
-            for key, value in item.items():
-                if hasattr(value, "isoformat"):
-                    item[key] = value.isoformat() if value else None
+        items = [row_to_item(dict(row)) for row in rows]
 
         return LocationItemsResponse(
             location_id=location_id,

@@ -27,11 +27,14 @@ export default function App() {
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [isEmpty, setIsEmpty] = useState(false);
+  const [version, setVersion] = useState('');
 
   const PER_PAGE = 24;
 
   useEffect(() => {
     api.platforms().then((d) => setPlatforms(d.platforms)).catch(() => {});
+    api.stats().then(() => {}).catch(() => {});
+    fetch('/api/health').then(r => r.json()).then(d => setVersion(d.version || '')).catch(() => {});
   }, []);
 
   const loadItems = useCallback(async () => {
@@ -100,7 +103,7 @@ export default function App() {
       <header>
         <div className="container">
           <div className="header-row">
-            <h1>Visual Cataloguer</h1>
+            <h1>Visual Cataloguer <span className="version-label">v{version}</span></h1>
             <div className="header-actions">
               <button className="btn btn-primary btn-sm" onClick={() => setShowImport(true)}>
                 + Import

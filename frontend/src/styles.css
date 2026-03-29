@@ -42,6 +42,7 @@ header {
 }
 
 header h1 { font-size: 1.25rem; font-weight: 600; }
+.version-label { font-size: 0.55em; color: var(--text-muted); font-weight: normal; }
 
 .stats-bar {
   display: flex;

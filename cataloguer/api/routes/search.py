@@ -6,30 +6,16 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
+from cataloguer.api.routes.items import ItemResponse, row_to_item
 
 router = APIRouter()
-
-
-class SearchResult(BaseModel):
-    """Response model for a search result."""
-
-    item_id: int
-    location_id: str | None
-    title_guess: str | None
-    title_manual: str | None
-    platform_guess: str | None
-    platform_manual: str | None
-    completeness: str
-    ebay_listed: bool
-    needs_review: bool
-    ocr_text_raw: str | None
 
 
 class SearchResponse(BaseModel):
     """Response model for search results."""
 
     query: str
-    results: list[SearchResult]
+    results: list[ItemResponse]
     total: int
     page: int
     per_page: int
@@ -81,8 +67,7 @@ def search_items(
         # Get paginated results
         offset = (page - 1) * per_page
         sql = f"""
-            SELECT item_id, location_id, title_guess, title_manual, platform_guess,
-                   platform_manual, completeness, ebay_listed, needs_review, ocr_text_raw
+            SELECT *
             FROM items{where_clause}
             ORDER BY
                 CASE
@@ -97,21 +82,7 @@ def search_items(
         params.extend([search_term, search_term, per_page, offset])
         rows = conn.execute(sql, params).fetchall()
 
-        results = [
-            SearchResult(
-                item_id=row["item_id"],
-                location_id=row["location_id"],
-                title_guess=row["title_guess"],
-                title_manual=row["title_manual"],
-                platform_guess=row["platform_guess"],
-                platform_manual=row["platform_manual"],
-                completeness=row["completeness"] or "unknown",
-                ebay_listed=bool(row["ebay_listed"]),
-                needs_review=bool(row["needs_review"]),
-                ocr_text_raw=row["ocr_text_raw"],
-            )
-            for row in rows
-        ]
+        results = [row_to_item(dict(row)) for row in rows]
 
         return SearchResponse(
             query=q,
