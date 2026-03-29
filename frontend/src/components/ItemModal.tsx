@@ -15,6 +15,7 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
   const [notes, setNotes] = useState(item.notes || '');
   const [saving, setSaving] = useState(false);
   const [reidentifying, setReidentifying] = useState(false);
+  const [showAi, setShowAi] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
@@ -76,11 +77,11 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
         <div className="modal-body">
           <img className="modal-img" src={api.fullUrl(item.item_id)} alt="Item" />
 
-          {/* AI Info */}
+          {/* AI Info - hidden by default */}
           {item.ai_description && (
-            <div className="ai-info">
+            <div className="ai-info" onClick={() => setShowAi(!showAi)} style={{ cursor: 'pointer' }}>
               <span className="ai-label">AI</span>
-              <span>{item.ai_description}</span>
+              {showAi ? <span>{item.ai_description}</span> : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Click to show AI response</span>}
             </div>
           )}
 
