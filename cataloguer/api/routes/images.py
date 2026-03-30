@@ -111,7 +111,7 @@ def get_item_thumbnail(item_id: int, db: DbDep) -> Response:
         return Response(
             content=row["image_blob"],
             media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=86400"},  # Cache for 1 day
+            headers={"Cache-Control": "no-cache"},
         )
 
 
@@ -134,7 +134,7 @@ def get_item_full_image(item_id: int, db: DbDep) -> Response:
         return Response(
             content=row["image_blob"],
             media_type="image/jpeg",
-            headers={"Cache-Control": "public, max-age=86400"},  # Cache for 1 day
+            headers={"Cache-Control": "no-cache"},
         )
 
 
