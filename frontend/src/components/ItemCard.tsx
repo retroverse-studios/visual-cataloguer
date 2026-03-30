@@ -4,11 +4,12 @@ import type { Item } from '../api';
 interface Props {
   item: Item;
   onClick: (item: Item) => void;
+  cacheBust?: number;
 }
 
 const NO_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23f1f5f9' width='100' height='100'/%3E%3Ctext x='50' y='50' text-anchor='middle' dy='.3em' fill='%2394a3b8' font-size='12'%3ENo Image%3C/text%3E%3C/svg%3E";
 
-export default function ItemCard({ item, onClick }: Props) {
+export default function ItemCard({ item, onClick, cacheBust }: Props) {
   const title = item.title_manual || item.title_guess || 'Unknown';
   const platform = item.platform_manual || item.platform_guess || '';
 
@@ -16,7 +17,7 @@ export default function ItemCard({ item, onClick }: Props) {
     <div className="card" onClick={() => onClick(item)}>
       <img
         className="card-img"
-        src={api.thumbUrl(item.item_id)}
+        src={`${api.thumbUrl(item.item_id)}${cacheBust ? `?t=${cacheBust}` : ''}`}
         alt={title}
         loading="lazy"
         onError={(e) => { (e.target as HTMLImageElement).src = NO_IMAGE; }}

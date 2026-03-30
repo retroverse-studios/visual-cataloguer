@@ -197,7 +197,7 @@ export default function App() {
                 <div className="results-count">{data.total} item{data.total !== 1 ? 's' : ''}</div>
                 <div className="grid">
                   {data.items.map((item) => (
-                    <ItemCard key={item.item_id} item={item} onClick={setSelectedItem} />
+                    <ItemCard key={item.item_id} item={item} onClick={setSelectedItem} cacheBust={refreshKey} />
                   ))}
                 </div>
                 <Pagination
