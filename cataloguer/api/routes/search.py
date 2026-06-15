@@ -114,13 +114,13 @@ def get_platforms(db: DbDep) -> dict[str, list[str]]:
 
 
 @router.post("/platforms/normalise")
-def normalise_platforms(db: DbDep) -> dict:
+def normalise_platforms(db: DbDep) -> dict[str, object]:
     """Normalise all platform names in existing items using the lookup table.
 
     Updates platform_guess values to their canonical form. Returns a summary
     of changes made.
     """
-    changes: list[dict[str, str]] = []
+    changes: list[dict[str, str | int]] = []
 
     with db.connection() as conn:
         # Normalise platform_guess
@@ -139,9 +139,9 @@ def normalise_platforms(db: DbDep) -> dict:
                     "SELECT changes()"
                 ).fetchone()[0]
                 changes.append({
-                    "from": original,
-                    "to": normalised,  # type: ignore[dict-item]
-                    "count": count,
+                    "from": str(original),
+                    "to": str(normalised),
+                    "count": int(count),
                 })
 
         # Normalise platform_manual
@@ -160,12 +160,12 @@ def normalise_platforms(db: DbDep) -> dict:
                     "SELECT changes()"
                 ).fetchone()[0]
                 changes.append({
-                    "from": original,
-                    "to": f"{normalised} (manual)",  # type: ignore[dict-item]
-                    "count": count,
+                    "from": str(original),
+                    "to": f"{normalised} (manual)",
+                    "count": int(count),
                 })
 
-    total_updated = sum(c["count"] for c in changes)  # type: ignore[arg-type]
+    total_updated = sum(int(c["count"]) for c in changes)
     return {
         "status": "ok",
         "total_updated": total_updated,

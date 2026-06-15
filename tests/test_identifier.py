@@ -48,10 +48,12 @@ class TestItemIdentifier:
 
     def test_init_claude_with_env_api_key(self) -> None:
         """Test that Claude provider reads API key from environment."""
-        with patch("os.environ.get", return_value="test-api-key"):
+        # clear=True so CLAUDE_MODEL isn't inherited from the real environment,
+        # letting the default model apply.
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-api-key"}, clear=True):
             identifier = ItemIdentifier(provider="claude")
             assert identifier.api_key == "test-api-key"
-            assert identifier.model == "claude-3-haiku-20240307"
+            assert identifier.model == "claude-haiku-4-5-20251001"
 
     def test_init_claude_with_explicit_api_key(self) -> None:
         """Test that explicit API key overrides environment."""

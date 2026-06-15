@@ -107,7 +107,7 @@ export const api = {
     fetchJSON<{ status: string }>(`${BASE}/items/${id}`, { method: 'DELETE' }),
 
   markListed: (id: number, listingId?: string) => {
-    const qs = listingId ? `?ebay_listing_id=${listingId}` : '';
+    const qs = listingId ? `?ebay_listing_id=${encodeURIComponent(listingId)}` : '';
     return fetchJSON<Item>(`${BASE}/items/${id}/mark-listed${qs}`, { method: 'PATCH' });
   },
 

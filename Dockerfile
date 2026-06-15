@@ -28,6 +28,13 @@ RUN pip install --no-cache-dir ".[web]"
 # Copy built frontend into the static directory
 COPY --from=frontend-build /app/cataloguer/api/static/dist/ cataloguer/api/static/dist/
 
+# Run as a non-root user. Create /data (the DB volume) and hand it to the app
+# user so the database is writable without running the server as root.
+RUN useradd --create-home --uid 1000 app \
+    && mkdir -p /data \
+    && chown -R app:app /data /app
+USER app
+
 # Default port
 EXPOSE 8000
 

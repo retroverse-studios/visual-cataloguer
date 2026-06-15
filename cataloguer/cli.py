@@ -98,7 +98,7 @@ def process(
         from cataloguer.processor.identifier import ItemIdentifier, detect_provider
 
         # Auto-detect provider if needed
-        actual_provider = provider
+        actual_provider: str | None = provider
         if provider == "auto":
             console.print("  Detecting AI provider...")
             actual_provider = detect_provider()
@@ -110,6 +110,9 @@ def process(
                 offline = True
 
         if not offline:
+            # If detection failed, offline was set True above, so we never reach
+            # here with a None provider.
+            assert actual_provider is not None
             try:
                 identifier = ItemIdentifier(provider=actual_provider, model=model)
                 console.print(f"  AI: {actual_provider} ({identifier.model})")
@@ -423,8 +426,12 @@ def search(
 )
 @click.option(
     "--host",
-    default="0.0.0.0",
-    help="Host to bind to (default: 0.0.0.0)",
+    default="127.0.0.1",
+    help=(
+        "Host to bind to (default: 127.0.0.1, localhost only). "
+        "The server has no authentication, so only expose it on a wider "
+        "interface (e.g. 0.0.0.0) behind a trusted proxy or firewall."
+    ),
 )
 @click.option(
     "--port",
@@ -762,10 +769,12 @@ def reidentify(
     # Update item
     import json
 
+    from cataloguer.platforms import normalise_platform
+
     updates: dict[str, str | float | bool | None] = {
         "item_type": result.item_type.value,
         "title_guess": result.title,
-        "platform_guess": result.platform,
+        "platform_guess": normalise_platform(result.platform),
         "brand": result.brand,
         "region": result.region,
         "year": result.year,

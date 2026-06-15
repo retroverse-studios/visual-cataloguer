@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -16,6 +17,40 @@ from cataloguer.api.routes.settings import resolve_setting
 from cataloguer.database.models import Database
 
 router = APIRouter()
+
+
+def _resolve_import_folder(folder_path: str) -> Path:
+    """Resolve and validate a user-supplied folder path for import/scanning.
+
+    Without this, an unauthenticated caller can point /process or /scan-folder
+    at any directory on the host ("/", "/etc", ...) and enumerate or ingest it.
+
+    If the VISCATALOG_IMPORT_ROOT environment variable is set, the resolved path
+    must stay within it (otherwise 403). When it is unset the path is still
+    resolved (collapsing any "..") but not otherwise confined, preserving the
+    local single-user workflow of importing from anywhere on the machine — the
+    primary protection there is binding the server to localhost.
+    """
+    if not folder_path:
+        raise HTTPException(status_code=400, detail="No folder path provided")
+
+    folder = Path(folder_path).resolve()
+
+    import_root = os.environ.get("VISCATALOG_IMPORT_ROOT")
+    if import_root:
+        root = Path(import_root).resolve()
+        if folder != root and root not in folder.parents:
+            raise HTTPException(
+                status_code=403,
+                detail="Folder is outside the permitted import root",
+            )
+
+    if not folder.exists():
+        raise HTTPException(status_code=400, detail=f"Folder not found: {folder_path}")
+    if not folder.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {folder_path}")
+
+    return folder
 
 
 class ProcessRequest(BaseModel):
@@ -58,11 +93,7 @@ class FolderInfo(BaseModel):
 @router.post("/process")
 async def process_folder(req: ProcessRequest, db: DbDep) -> StreamingResponse:
     """Process a folder of images. Streams progress as SSE events."""
-    folder = Path(req.folder_path)
-    if not folder.exists():
-        raise HTTPException(status_code=400, detail=f"Folder not found: {req.folder_path}")
-    if not folder.is_dir():
-        raise HTTPException(status_code=400, detail=f"Not a directory: {req.folder_path}")
+    folder = _resolve_import_folder(req.folder_path)
 
     return StreamingResponse(
         _process_stream(folder, db, req),
@@ -140,10 +171,7 @@ async def _process_stream(
         if req.use_subfolders_as_locations:
             for f in files:
                 rel = f.path.relative_to(folder)
-                if len(rel.parts) > 1:
-                    subfolder_name = rel.parts[0]
-                else:
-                    subfolder_name = folder.name
+                subfolder_name = rel.parts[0] if len(rel.parts) > 1 else folder.name
                 subfolder_map[str(f.path)] = subfolder_name
                 db.create_location(subfolder_name)
 
@@ -172,7 +200,7 @@ async def _process_stream(
 
             try:
                 result = await asyncio.to_thread(
-                    pipeline._process_single_file, file_info
+                    pipeline._process_single_file, file_info, None, req.resume
                 )
                 if result and result.items_created > 0:
                     items_created += result.items_created
@@ -223,15 +251,19 @@ _enhance_job: dict[str, object] = {
     "phase": "idle",  # idle, enhancing, complete, error
 }
 
+# Hold a reference to the running task so it isn't garbage-collected mid-run
+# (asyncio only keeps a weak reference to fire-and-forget tasks).
+_enhance_task: asyncio.Task[None] | None = None
+
 
 @router.get("/auto-enhance-status")
-def get_enhance_status() -> dict:
+def get_enhance_status() -> dict[str, object]:
     """Get the current status of the background auto-enhance job."""
     return dict(_enhance_job)
 
 
 @router.post("/auto-enhance-all")
-async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> dict:
+async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> dict[str, str]:
     """Start background auto-enhance job. Returns immediately."""
     if _enhance_job["running"]:
         raise HTTPException(status_code=409, detail="Auto-enhance already running")
@@ -242,17 +274,24 @@ async def auto_enhance_all(req: AutoEnhanceRequest, db: DbDep) -> dict:
         message="Starting...", phase="enhancing",
     )
 
-    # Launch background task
-    asyncio.create_task(_enhance_background(db, req))
+    # Launch background task, keeping a reference so it can't be GC'd mid-run.
+    global _enhance_task
+    _enhance_task = asyncio.create_task(_enhance_background(db, req))
 
     return {"status": "started"}
 
 
 async def _enhance_background(db: Database, req: AutoEnhanceRequest) -> None:
     """Run auto-enhance in the background, updating _enhance_job state."""
+    import numpy as np
+
     from cataloguer.processor.image_ops import (
         auto_crop as do_crop,
+    )
+    from cataloguer.processor.image_ops import (
         auto_rotate as do_rotate,
+    )
+    from cataloguer.processor.image_ops import (
         create_thumbnail,
         decode_jpeg,
         encode_jpeg,
@@ -291,8 +330,7 @@ async def _enhance_background(db: Database, req: AutoEnhanceRequest) -> None:
                     continue
 
                 image = await asyncio.to_thread(decode_jpeg, blob)
-                original_shape = image.shape
-                original_data = image.data.tobytes()[:64]
+                original = image  # ops below return new arrays, so identity/compare is safe
 
                 # AI-based rotation detection
                 if req.ai_rotate and identifier:
@@ -318,7 +356,7 @@ async def _enhance_background(db: Database, req: AutoEnhanceRequest) -> None:
                 if req.auto_rotate:
                     image = await asyncio.to_thread(do_rotate, image)
 
-                changed = image.shape != original_shape or image.data.tobytes()[:64] != original_data
+                changed = image.shape != original.shape or not np.array_equal(image, original)
                 if changed:
                     h, w = image.shape[:2]
                     full_jpeg = await asyncio.to_thread(encode_jpeg, image)
@@ -341,22 +379,23 @@ async def _enhance_background(db: Database, req: AutoEnhanceRequest) -> None:
             await asyncio.sleep(0)
 
         _enhance_job.update(
-            running=False, phase="complete",
+            phase="complete",
             processed=total, enhanced=enhanced_count,
             message=f"Done! Enhanced {enhanced_count} of {total} items.",
         )
 
     except Exception as e:
-        _enhance_job.update(running=False, phase="error", message=str(e))
+        _enhance_job.update(phase="error", message=str(e))
+    finally:
+        # Always clear the running flag — otherwise a crash or cancellation
+        # wedges the job at running=True and every future start returns 409.
+        _enhance_job["running"] = False
 
 
 @router.post("/scan-folder")
 async def scan_folder(body: dict[str, str]) -> FolderInfo:
     """Preview a folder before processing — count images, detect subfolders."""
-    folder_path = body.get("folder_path", "")
-    folder = Path(folder_path)
-    if not folder.exists() or not folder.is_dir():
-        raise HTTPException(status_code=400, detail=f"Invalid folder: {folder_path}")
+    folder = _resolve_import_folder(body.get("folder_path", ""))
 
     image_extensions = {
         ".jpg", ".jpeg", ".png", ".tiff", ".tif",

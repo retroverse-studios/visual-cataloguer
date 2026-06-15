@@ -16,19 +16,29 @@ export default function EnhanceProgress() {
   } | null>(null);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const poll = () => {
-      api.autoEnhanceStatus().then(setStatus).catch(() => {});
+    const poll = async () => {
+      try {
+        const s = await api.autoEnhanceStatus();
+        if (cancelled) return;
+        setStatus(s);
+        // Poll quickly while a job runs; back off when idle/finished so we're
+        // not hammering the endpoint every few seconds for the app's lifetime.
+        timer = setTimeout(poll, s.running ? 2000 : 10000);
+      } catch {
+        if (cancelled) return;
+        timer = setTimeout(poll, 10000);
+      }
     };
 
-    // Initial check
     poll();
 
-    // Poll every 3 seconds
-    timer = setInterval(poll, 3000);
-
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   if (!status || status.phase === 'idle') return null;

@@ -444,13 +444,21 @@ Condition Notes: {condition_notes}
 Write the description in plain text, suitable for an eBay listing. Keep it to 3-5 short paragraphs."""
 
     try:
-        client = anthropic.Anthropic()
+        from cataloguer.api.routes.settings import resolve_setting
+
+        api_key = resolve_setting(db, "anthropic_api_key") or None
+        model = resolve_setting(db, "claude_model")
+        client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=model,
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
-        description = message.content[0].text if message.content else ""
+        # Pull the first text block; don't assume content[0] is text.
+        description = next(
+            (block.text for block in message.content if hasattr(block, "text")),
+            "",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {e}") from None
 
