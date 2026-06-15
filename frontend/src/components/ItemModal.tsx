@@ -6,9 +6,11 @@ interface Props {
   item: Item;
   onClose: () => void;
   onSaved: () => void;
+  /** Notify the parent that this item's image changed, so its grid thumbnail can refresh. */
+  onImageChanged?: (itemId: number) => void;
 }
 
-export default function ItemModal({ item, onClose, onSaved }: Props) {
+export default function ItemModal({ item, onClose, onSaved, onImageChanged }: Props) {
   const [title, setTitle] = useState(item.title_manual || item.title_guess || '');
   const [platform, setPlatform] = useState(item.platform_manual || item.platform_guess || '');
   const [completeness, setCompleteness] = useState(item.completeness || 'unknown');
@@ -21,7 +23,10 @@ export default function ItemModal({ item, onClose, onSaved }: Props) {
   const [editingImage, setEditingImage] = useState(false);
   const [cropping, setCropping] = useState(false);
 
-  const bustCache = () => setImgKey((k) => k + 1);
+  const bustCache = () => {
+    setImgKey((k) => k + 1);
+    onImageChanged?.(item.item_id);
+  };
 
   const handleSave = async () => {
     setSaving(true);

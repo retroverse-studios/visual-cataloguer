@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import type { Item, PaginatedItems } from './api';
 import StatsBar from './components/StatsBar';
@@ -28,8 +28,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isEmpty, setIsEmpty] = useState(false);
   const [version, setVersion] = useState('');
+  // Per-item image cache-buster: bumped only when a specific item's image
+  // actually changes, so editing one item doesn't force every thumbnail in the
+  // grid to re-download.
+  const [imgVersions, setImgVersions] = useState<Record<number, number>>({});
+  // Monotonic request id to discard out-of-order loadItems() responses.
+  const reqIdRef = useRef(0);
 
   const PER_PAGE = 24;
+
+  const bumpImageVersion = useCallback((itemId: number) => {
+    setImgVersions((v) => ({ ...v, [itemId]: (v[itemId] || 0) + 1 }));
+  }, []);
 
   useEffect(() => {
     api.platforms().then((d) => setPlatforms(d.platforms)).catch(() => {});
@@ -38,6 +48,7 @@ export default function App() {
   }, []);
 
   const loadItems = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     try {
       let result: PaginatedItems;
@@ -64,6 +75,9 @@ export default function App() {
         result = await api.items(params);
       }
 
+      // Ignore responses from superseded requests (out-of-order results).
+      if (reqId !== reqIdRef.current) return;
+
       setData(result);
       // Detect empty collection (no items, no search, no filters)
       if (!search && filter === 'all' && !platformFilter && !locationFilter && result.total === 0) {
@@ -72,9 +86,10 @@ export default function App() {
         setIsEmpty(false);
       }
     } catch (e) {
+      if (reqId !== reqIdRef.current) return;
       console.error('Failed to load items:', e);
     } finally {
-      setLoading(false);
+      if (reqId === reqIdRef.current) setLoading(false);
     }
   }, [search, filter, page, platformFilter, locationFilter]);
 
@@ -197,7 +212,7 @@ export default function App() {
                 <div className="results-count">{data.total} item{data.total !== 1 ? 's' : ''}</div>
                 <div className="grid">
                   {data.items.map((item) => (
-                    <ItemCard key={item.item_id} item={item} onClick={setSelectedItem} cacheBust={refreshKey} />
+                    <ItemCard key={item.item_id} item={item} onClick={setSelectedItem} cacheBust={imgVersions[item.item_id]} />
                   ))}
                 </div>
                 <Pagination
@@ -211,7 +226,12 @@ export default function App() {
       </main>
 
       {selectedItem && (
-        <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} onSaved={handleItemSaved} />
+        <ItemModal
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          onSaved={handleItemSaved}
+          onImageChanged={bumpImageVersion}
+        />
       )}
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
