@@ -27,12 +27,12 @@ from tqdm import tqdm
 from cataloguer.database.models import Database, Item
 from cataloguer.platforms import normalise_platform
 from cataloguer.processor.classifier import ClassificationResult, ImageClassifier, ImageType
-from cataloguer.processor.image_ops import auto_crop, auto_rotate, rotate_by_degrees
 from cataloguer.processor.identifier import (
     IdentificationResult,
     ItemIdentifier,
     UnifiedResult,
 )
+from cataloguer.processor.image_ops import auto_crop, auto_rotate, rotate_by_degrees
 
 
 @dataclass

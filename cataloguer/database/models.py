@@ -221,9 +221,26 @@ CREATE INDEX IF NOT EXISTS idx_images_cover ON item_images(is_cover);
 """
 
 
+def _connect(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with the pragmas this app relies on.
+
+    - foreign_keys=ON so ON DELETE CASCADE actually fires (off by default per
+      connection, otherwise deleting an item orphans its image BLOBs forever).
+    - WAL journaling + a busy timeout so concurrent readers/writers (the
+      background auto-enhance job vs. API requests) don't hit "database is
+      locked" errors.
+    """
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
 def init_db(db_path: Path) -> None:
     """Initialize the database with schema."""
-    conn = sqlite3.connect(db_path)
+    conn = _connect(db_path)
     conn.executescript(SCHEMA)
     conn.commit()
     conn.close()
@@ -232,8 +249,7 @@ def init_db(db_path: Path) -> None:
 @contextmanager
 def get_session(db_path: Path) -> Iterator[sqlite3.Connection]:
     """Get a database connection as a context manager."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = _connect(db_path)
     try:
         yield conn
         conn.commit()
@@ -254,8 +270,7 @@ class Database:
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
         """Get a database connection."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = _connect(self.db_path)
         try:
             yield conn
             conn.commit()
@@ -266,10 +281,20 @@ class Database:
             conn.close()
 
     def create_location(self, location_id: str, label: str | None = None) -> None:
-        """Create or update a location record."""
+        """Create a location record, or update its label if one is supplied.
+
+        Uses upsert rather than INSERT OR REPLACE so that re-encountering an
+        existing location (e.g. a second divider, or a re-process) does not wipe
+        a user-edited label/notes or reset created_at. A non-null label is
+        applied on conflict; passing label=None leaves the existing row intact.
+        """
         with self.connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO locations (location_id, label) VALUES (?, ?)",
+                """
+                INSERT INTO locations (location_id, label) VALUES (?, ?)
+                ON CONFLICT(location_id) DO UPDATE SET
+                    label = COALESCE(excluded.label, locations.label)
+                """,
                 (location_id, label),
             )
 

@@ -3,12 +3,14 @@
 import io
 from typing import Annotated
 
+import numpy as np
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from PIL import Image
 from pydantic import BaseModel
 
 from cataloguer.api.deps import DbDep
+from cataloguer.database.models import Database
 from cataloguer.processor.image_ops import (
     auto_crop,
     auto_rotate,
@@ -20,6 +22,15 @@ from cataloguer.processor.image_ops import (
 )
 
 router = APIRouter()
+
+# Guard against decompression-bomb DoS on uploads: cap the raw request body and
+# the decoded pixel count. A small crafted file can otherwise expand to GBs of
+# RAM when decoded.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB on the wire
+MAX_IMAGE_PIXELS = 50_000_000  # 50 megapixels decoded
+
+# Make PIL itself raise on absurdly large images rather than warn-and-continue.
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 class ImageInfo(BaseModel):
@@ -201,24 +212,22 @@ class ImageEditResponse(BaseModel):
 
 
 def _apply_and_save(
-    db: object, item_id: int, image: object
+    db: Database, item_id: int, image: np.ndarray
 ) -> ImageEditResponse:
     """Encode, save full + thumbnail, return dimensions."""
-    import numpy as np
-    img = image  # type: np.ndarray
-    h, w = img.shape[:2]
-    full_jpeg = encode_jpeg(img)
-    thumb = create_thumbnail(img)
+    h, w = image.shape[:2]
+    full_jpeg = encode_jpeg(image)
+    thumb = create_thumbnail(image)
     th, tw = thumb.shape[:2]
     thumb_jpeg = encode_jpeg(thumb)
-    db.replace_image(item_id, "full", full_jpeg, w, h)  # type: ignore[attr-defined]
-    db.replace_image(item_id, "thumb", thumb_jpeg, tw, th)  # type: ignore[attr-defined]
+    db.replace_image(item_id, "full", full_jpeg, w, h)
+    db.replace_image(item_id, "thumb", thumb_jpeg, tw, th)
     return ImageEditResponse(item_id=item_id, width=w, height=h)
 
 
-def _load_full_image(db: object, item_id: int) -> object:
+def _load_full_image(db: Database, item_id: int) -> np.ndarray:
     """Load the full image for an item as a numpy array."""
-    blob = db.get_item_image(item_id, "full")  # type: ignore[attr-defined]
+    blob = db.get_item_image(item_id, "full")
     if not blob:
         raise HTTPException(status_code=404, detail="Image not found")
     return decode_jpeg(blob)
@@ -230,7 +239,7 @@ def rotate_item_image(item_id: int, req: RotateRequest, db: DbDep) -> ImageEditR
     if req.direction not in ("cw", "ccw"):
         raise HTTPException(status_code=400, detail="direction must be 'cw' or 'ccw'")
     image = _load_full_image(db, item_id)
-    rotated = rotate_90(image, req.direction)  # type: ignore[arg-type]
+    rotated = rotate_90(image, req.direction)
     return _apply_and_save(db, item_id, rotated)
 
 
@@ -238,7 +247,7 @@ def rotate_item_image(item_id: int, req: RotateRequest, db: DbDep) -> ImageEditR
 def crop_item_image(item_id: int, req: CropRequest, db: DbDep) -> ImageEditResponse:
     """Crop an item image to the specified rectangle."""
     image = _load_full_image(db, item_id)
-    cropped = manual_crop(image, req.x, req.y, req.width, req.height)  # type: ignore[arg-type]
+    cropped = manual_crop(image, req.x, req.y, req.width, req.height)
     return _apply_and_save(db, item_id, cropped)
 
 
@@ -246,7 +255,7 @@ def crop_item_image(item_id: int, req: CropRequest, db: DbDep) -> ImageEditRespo
 def auto_enhance_item_image(item_id: int, db: DbDep) -> ImageEditResponse:
     """Auto-crop and deskew an item image."""
     image = _load_full_image(db, item_id)
-    enhanced = auto_crop(image)  # type: ignore[arg-type]
+    enhanced = auto_crop(image)
     enhanced = auto_rotate(enhanced)
     return _apply_and_save(db, item_id, enhanced)
 
@@ -286,9 +295,19 @@ async def upload_item_image(
 
     # Read and validate image
     try:
-        contents = await file.read()
+        contents = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(contents) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image exceeds maximum upload size of {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+            )
         img = Image.open(io.BytesIO(contents))
         width, height = img.size
+        if width * height > MAX_IMAGE_PIXELS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Image exceeds maximum of {MAX_IMAGE_PIXELS // 1_000_000} megapixels",
+            )
 
         # Convert to JPEG if needed
         if img.format != "JPEG":
@@ -298,6 +317,8 @@ async def upload_item_image(
                 img = img.convert("RGB")
             img.save(output, format="JPEG", quality=85)
             contents = output.getvalue()
+    except HTTPException:
+        raise  # size/pixel limits already carry the right status code
     except Exception as e:
         raise HTTPException(
             status_code=400,

@@ -6,14 +6,56 @@ consoles, controllers, books, vinyl, and other collectibles.
 """
 
 import base64
+import ipaddress
 import json
 import os
+import socket
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
+
+
+def validate_ollama_host(host: str) -> str:
+    """Validate an Ollama base URL before we make requests to it.
+
+    The host is user-configurable (via settings/env), and the server then makes
+    outbound requests to it — a classic SSRF vector. Ollama legitimately runs on
+    localhost or a private LAN box, so we deliberately allow loopback/private
+    addresses; what we block is the http(s) scheme being absent and any
+    link-local address (169.254.0.0/16, fe80::/10), which covers the cloud
+    metadata endpoints (169.254.169.254, metadata.google.internal) that are the
+    high-value SSRF targets.
+
+    Returns the host unchanged if valid; raises ValueError otherwise.
+    """
+    parsed = urlparse(host)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Ollama host must be an http(s) URL, got: {host!r}")
+    if not parsed.hostname:
+        raise ValueError(f"Ollama host has no hostname: {host!r}")
+
+    if parsed.hostname == "metadata.google.internal":
+        raise ValueError("Ollama host resolves to a cloud metadata endpoint")
+
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        # Can't resolve now; let the actual request fail rather than guess.
+        return host
+
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_link_local:
+            raise ValueError(
+                f"Ollama host {parsed.hostname!r} resolves to a link-local "
+                f"address ({ip}), which is not allowed"
+            )
+
+    return host
 
 
 class ItemType(str, Enum):
@@ -173,9 +215,10 @@ Respond ONLY with the JSON object."""
 def check_ollama_available(host: str = "http://localhost:11434") -> bool:
     """Check if Ollama is running and available."""
     try:
+        validate_ollama_host(host)
         response = httpx.get(f"{host}/api/tags", timeout=2.0)
         return response.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException):
+    except (httpx.ConnectError, httpx.TimeoutException, ValueError):
         return False
 
 
@@ -235,6 +278,8 @@ class ItemIdentifier:
             self.api_key = None
             self.model = model or os.environ.get("OLLAMA_MODEL", "llava")
             self.ollama_host = os.environ.get("OLLAMA_HOST", ollama_host)
+            # Reject SSRF-prone hosts (cloud metadata / link-local) up front.
+            validate_ollama_host(self.ollama_host)
         else:
             raise ValueError(f"Unknown provider: {provider}. Use 'claude' or 'ollama'.")
 
@@ -447,12 +492,14 @@ Respond ONLY with the JSON object."""
             ],
         )
 
-        response_text = ""
         for block in message.content:
             if hasattr(block, "text"):
-                response_text = block.text
-                break
-        return response_text
+                return block.text
+        # No text block at all (e.g. only tool-use/thinking blocks) — surface it
+        # rather than returning "" and silently misclassifying as a low-confidence item.
+        raise RuntimeError(
+            f"Claude returned no text content (stop_reason={message.stop_reason})"
+        )
 
     def _query_ollama(self, base64_image: str, prompt: str) -> str:
         """Query Ollama API with an image and prompt."""
@@ -468,7 +515,7 @@ Respond ONLY with the JSON object."""
         )
         response.raise_for_status()
         result = response.json()
-        return result.get("response", "")
+        return str(result.get("response", ""))
 
     def classify_and_identify(
         self, image_data: bytes, media_type: str = "image/jpeg"
