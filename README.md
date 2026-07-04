@@ -172,12 +172,39 @@ Supports:
 
 ## Installation
 
+Three ways to run it, from easiest to most flexible:
+
+### Desktop app (no Python or Docker required)
+
+Download the build for your platform from the [latest release](../../releases/latest):
+macOS (Apple Silicon or Intel), Windows, or Linux. Unzip and run — your collection
+database is stored in your user data folder automatically.
+
+The binaries are unsigned, so the first launch needs a manual approval:
+- **macOS**: right-click the app → Open → Open (Gatekeeper warning)
+- **Windows**: SmartScreen → "More info" → "Run anyway"
+
+Note: the desktop build does not bundle Tesseract, so offline (`--offline`) OCR
+mode is unavailable — AI identification (Claude or Ollama) works normally.
+
+### Docker
+
+```bash
+curl -O https://raw.githubusercontent.com/retroverse-studios/visual-cataloguer/main/docker-compose.yml
+docker compose up -d   # web UI on http://localhost:8000, database in ./data/
+```
+
+### Python package
+
 ```bash
 # From PyPI
 pip install visual-cataloguer
 
 # With web interface
 pip install visual-cataloguer[web]
+
+# With the desktop window (viscatalog desktop)
+pip install visual-cataloguer[desktop]
 
 # Or with uv
 uv pip install visual-cataloguer[web]
@@ -213,8 +240,14 @@ viscatalog export ./data.csv --format csv         # Export metadata as CSV
 viscatalog export ./data.json --format json       # Export metadata as JSON
 viscatalog export ./images --include-metadata     # Images + JSON sidecar files
 
+# Price research (recent eBay sold listings)
+viscatalog price <item-id> [--keywords "override terms"]
+
 # Web server
 viscatalog serve [--port 8000] [--host 0.0.0.0]
+
+# Desktop window (stores DB in your user data folder)
+viscatalog desktop [--no-gui] [--database PATH]
 ```
 
 ## API Endpoints
@@ -226,6 +259,8 @@ GET    /api/items/{id}               # Get item
 PATCH  /api/items/{id}               # Update item
 DELETE /api/items/{id}               # Delete item
 POST   /api/items/{id}/reidentify    # Re-run AI identification
+POST   /api/items/{id}/price-research # Estimate value from recent eBay sold listings
+GET    /api/items/{id}/price-history  # Stored price research snapshots
 
 # Images
 GET    /api/items/{id}/images        # List item images

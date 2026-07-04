@@ -35,6 +35,13 @@ web = [
     "sqlalchemy>=2.0.0",
     "python-multipart>=0.0.6",
 ]
+desktop = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "python-multipart>=0.0.6",
+    "pywebview>=5.0",
+    "platformdirs>=4.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",

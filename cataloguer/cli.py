@@ -1029,6 +1029,23 @@ def export(
 
 
 @main.command()
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Path to SQLite database (default: per-user app data directory)",
+)
+@click.option("--no-gui", is_flag=True, help="Start the local server without opening a window")
+@click.option("--port", type=int, default=None, help="Port (default: random free port)")
+def desktop(database: Path | None, no_gui: bool, port: int | None) -> None:
+    """Open the desktop app (native window around the web UI)."""
+    from cataloguer.desktop import run
+
+    run(database=database, no_gui=no_gui, port=port)
+
+
+@main.command()
 @click.argument("item_id", type=int)
 @click.option(
     "--database",
