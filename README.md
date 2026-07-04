@@ -6,6 +6,8 @@
 
 Batch catalogue physical collections using visual dividers (QR codes) and automated image processing.
 
+**Website:** [retroverse-studios.github.io/visual-cataloguer](https://retroverse-studios.github.io/visual-cataloguer/) · **Downloads:** [latest release](../../releases/latest)
+
 ## The Problem
 
 You have thousands of items (retro games, books, vinyl, trading cards) stored in boxes. You need them in a searchable database so you can find things and list them on eBay. Manual entry would take weeks.
