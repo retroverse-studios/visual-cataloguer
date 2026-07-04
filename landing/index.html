@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visual Cataloguer — photograph your collection into a database</title>
+  <meta name="description" content="Batch catalogue retro games, vinyl, books and trading cards. Photograph items with QR dividers, let AI identify everything, then search, browse and price-check against recent eBay sales.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a class="wordmark" href="#top">📦 Visual Cataloguer</a>
+      <div class="nav-links">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#run">Run it</a>
+        <a href="https://github.com/retroverse-studios/visual-cataloguer">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow">Retro games · Vinyl · Books · Trading cards</p>
+        <h1>Photograph your collection <em>into a database.</em></h1>
+        <p class="sub">
+          Thousands of items in boxes, none of them searchable? Photograph them
+          one by one with QR-code dividers between boxes, and Visual Cataloguer
+          turns the camera roll into a browsable inventory — AI identifies each
+          item, tracks where it's stored, and checks what it recently sold for
+          on eBay.
+        </p>
+
+        <div class="cta-row">
+          <a id="download-btn" class="btn btn-primary" href="https://github.com/retroverse-studios/visual-cataloguer/releases/latest">Download the desktop app</a>
+          <a class="btn btn-ghost" href="#run">Other ways to run it</a>
+        </div>
+
+        <div class="download-block" id="download">
+          <div class="platform-toggle" role="group" aria-label="Choose platform">
+            <button data-platform="mac" class="platform-btn">macOS</button>
+            <button data-platform="windows" class="platform-btn">Windows</button>
+            <button data-platform="linux" class="platform-btn">Linux</button>
+          </div>
+          <p class="version"><span id="version">&nbsp;</span> <a id="alt-arch" class="alt-arch" href="#" hidden></a></p>
+          <p class="all-releases"><a href="https://github.com/retroverse-studios/visual-cataloguer/releases">All releases →</a></p>
+        </div>
+
+        <p class="privacy-tag">Local-first. One SQLite file, images included — no cloud, no accounts.</p>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="photo-strip">
+          <div class="shot shot-qr">
+            <div class="qr"></div>
+            <span class="shot-label">BOX-1</span>
+          </div>
+          <div class="strip-arrow">→</div>
+          <div class="shot shot-item">
+            <span class="cart">🕹️</span>
+            <span class="shot-label">photo</span>
+          </div>
+          <div class="strip-arrow">→</div>
+          <div class="shot shot-item">
+            <span class="cart">💿</span>
+            <span class="shot-label">photo</span>
+          </div>
+          <div class="strip-arrow">→</div>
+          <div class="shot shot-black">
+            <span class="shot-label">end</span>
+          </div>
+        </div>
+        <div class="result-card">
+          <div class="result-head">
+            <span class="result-title">Super Mario 64</span>
+            <span class="badge">N64</span>
+            <span class="badge badge-loc">📦 BOX-1</span>
+          </div>
+          <div class="result-row"><span>Completeness</span><b>Cartridge only</b></div>
+          <div class="result-row"><span>AI confidence</span><b>High</b></div>
+          <div class="result-row price"><span>Recent eBay sales</span><b>AU $18 – $120 · median $55</b></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="how" id="how">
+    <div class="container">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li class="card step">
+          <span class="step-num">1</span>
+          <h3>Print QR dividers</h3>
+          <p>One per box or shelf — <code>BOX-1</code>, <code>SHELF-A3</code>. Hand-written labels work too.</p>
+        </li>
+        <li class="card step">
+          <span class="step-num">2</span>
+          <h3>Photograph everything</h3>
+          <p>Divider, then one photo per item. Cover the lens to end a box. Multiple cameras merge by timestamp.</p>
+        </li>
+        <li class="card step">
+          <span class="step-num">3</span>
+          <h3>Process the folder</h3>
+          <p>AI reads the dividers and identifies every item — title, platform, region, completeness, condition.</p>
+        </li>
+        <li class="card step">
+          <span class="step-num">4</span>
+          <h3>Search, price, list</h3>
+          <p>Browse the web UI, check recent eBay sold prices, and mark items as listed when they sell.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="container">
+      <h2>Built for big boxes of stuff</h2>
+      <div class="feature-grid">
+        <div class="card">
+          <h3>🤖 AI identification</h3>
+          <p>Claude in the cloud or LLaVA on your own machine via Ollama — titles, platforms, regions and completeness from a single photo.</p>
+        </div>
+        <div class="card">
+          <h3>💰 eBay price research</h3>
+          <p>One click pulls recent sold listings for an item and shows the low, median and high — with the sales that back it up.</p>
+        </div>
+        <div class="card">
+          <h3>📦 Location tracking</h3>
+          <p>Every item remembers which box or shelf it came from, so you can actually find it again when it sells.</p>
+        </div>
+        <div class="card">
+          <h3>📷 Camera-friendly</h3>
+          <p>JPEG, PNG, TIFF and ~20 RAW formats. Auto-crop, deskew and rotate. Duplicate photos are detected and skipped.</p>
+        </div>
+        <div class="card">
+          <h3>🔍 Searchable web UI</h3>
+          <p>Filter by platform, box, completeness or review status. Edit titles, crop images and generate eBay descriptions inline.</p>
+        </div>
+        <div class="card">
+          <h3>📤 Yours to export</h3>
+          <p>CSV, JSON, or images organised by location — plus a REST API. Everything lives in one portable SQLite file.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="run" id="run">
+    <div class="container">
+      <h2>Three ways to run it</h2>
+      <div class="run-grid">
+        <div class="card run-card">
+          <h3>💻 Desktop app</h3>
+          <p id="desktop-blurb">Download, unzip, run. No Python, no Docker — your database lives in your user folder.</p>
+          <a id="download-btn-2" class="btn btn-primary btn-block" href="https://github.com/retroverse-studios/visual-cataloguer/releases/latest">Download</a>
+          <p class="other-platforms" id="other-platforms"></p>
+          <p class="fine-print">Unsigned builds: on macOS right-click → Open the first time; on Windows choose "More info → Run anyway".</p>
+        </div>
+        <div class="card run-card">
+          <h3>🐳 Docker</h3>
+          <p>For a home server or NAS — the whole household can browse the collection.</p>
+          <pre><code>curl -O https://raw.githubusercontent.com/retroverse-studios/visual-cataloguer/main/docker-compose.yml
+docker compose up -d</code></pre>
+          <p class="fine-print">Pulls <code>ghcr.io/retroverse-studios/visual-cataloguer</code>. Web UI on port 8000, database in <code>./data/</code>.</p>
+        </div>
+        <div class="card run-card">
+          <h3>🐍 Python package</h3>
+          <p>The full CLI for batch processing, plus the same web UI via <code>viscatalog serve</code>.</p>
+          <pre><code>pip install visual-cataloguer[web]
+viscatalog process ./photos
+viscatalog serve</code></pre>
+          <p class="fine-print">Python 3.11+. Offline OCR mode needs <a href="https://github.com/tesseract-ocr/tesseract">Tesseract</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <p>MIT licensed · <a href="https://github.com/retroverse-studios/visual-cataloguer">Source on GitHub</a></p>
+      <p class="fine-print">AI identification uses your own Anthropic API key or a local Ollama install. Price research reads public eBay sold listings.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
