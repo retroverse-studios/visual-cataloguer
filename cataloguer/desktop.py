@@ -15,12 +15,30 @@ from __future__ import annotations
 
 import argparse
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
 
 APP_NAME = "visual-cataloguer"
 WINDOW_TITLE = "Visual Cataloguer"
+
+
+def _ensure_streams() -> None:
+    """Give Python real stdout/stderr in windowed builds.
+
+    PyInstaller's console=False bootloader leaves sys.stdout/sys.stderr as
+    None (most visibly on Windows), so the first print() or logging emit
+    crashes the app. Route them to a log file next to the database instead.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    log_path = default_database_path().parent / "desktop.log"
+    stream = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")  # noqa: SIM115
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
 
 
 def default_database_path() -> Path:
@@ -96,6 +114,7 @@ def run(database: Path | None = None, no_gui: bool = False, port: int | None = N
 
 def main() -> None:
     """Argparse wrapper so the frozen desktop binary accepts basic flags."""
+    _ensure_streams()
     parser = argparse.ArgumentParser(prog=WINDOW_TITLE)
     parser.add_argument(
         "--database",
