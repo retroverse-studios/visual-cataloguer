@@ -358,9 +358,17 @@ def reidentify_item(
             detail="No image found for item. Upload an image first.",
         )
 
-    # Initialize identifier
+    # Initialize identifier using resolved settings (env > DB > default), so a
+    # key saved via the Settings UI works here too — not just env vars.
+    from cataloguer.api.routes.settings import resolve_setting
+
     try:
-        identifier = ItemIdentifier(provider=request.provider, model=request.model)
+        identifier = ItemIdentifier(
+            provider=request.provider,
+            model=request.model or resolve_setting(db, f"{request.provider}_model") or None,
+            api_key=resolve_setting(db, "anthropic_api_key") or None,
+            ollama_host=resolve_setting(db, "ollama_host"),
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 

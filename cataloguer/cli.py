@@ -1028,5 +1028,85 @@ def export(
             console.print(f"  ... and {len(locations) - 10} more")
 
 
+@main.command()
+@click.argument("item_id", type=int)
+@click.option(
+    "--database",
+    "-d",
+    type=click.Path(exists=True, path_type=Path),
+    default="collection.db",
+    help="Path to SQLite database",
+)
+@click.option("--keywords", type=str, default=None, help="Override search keywords")
+def price(item_id: int, database: Path, keywords: str | None) -> None:
+    """Research recent eBay sold prices for an item."""
+    import os
+
+    from cataloguer.services.pricing import (
+        EbaySoldPricingProvider,
+        PricingError,
+        build_search_keywords,
+    )
+
+    db = Database(database)
+    item = db.get_item(item_id)
+    if not item:
+        console.print(f"[red]Item {item_id} not found[/red]")
+        raise SystemExit(1)
+
+    search_keywords = keywords or build_search_keywords(
+        title=item.title_manual or item.title_guess,
+        platform=item.platform_manual or item.platform_guess,
+        ocr_text=item.ocr_text_raw,
+    )
+    if not search_keywords:
+        console.print("[red]Item has no title to search with. Set one or pass --keywords.[/red]")
+        raise SystemExit(1)
+
+    site = os.environ.get("EBAY_SITE") or db.get_setting("ebay_site") or "www.ebay.com.au"
+    provider = EbaySoldPricingProvider(site=site)
+
+    console.print(f"Searching eBay sold listings for: [cyan]{search_keywords}[/cyan]")
+    try:
+        estimate = provider.research(search_keywords)
+    except PricingError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+    db.add_price_estimate(
+        item_id=item_id,
+        source=estimate.source,
+        query=estimate.query,
+        currency=estimate.currency,
+        price_low=estimate.price_low,
+        price_median=estimate.price_median,
+        price_high=estimate.price_high,
+        sample_size=estimate.sample_size,
+        most_recent_sale=(
+            estimate.most_recent_sale.isoformat() if estimate.most_recent_sale else None
+        ),
+        search_url=estimate.search_url,
+    )
+
+    table = Table(title=f"Sold prices — {search_keywords}")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Low", f"{estimate.currency} {estimate.price_low:.2f}")
+    table.add_row("Median", f"{estimate.currency} {estimate.price_median:.2f}")
+    table.add_row("High", f"{estimate.currency} {estimate.price_high:.2f}")
+    table.add_row("Sales sampled", str(estimate.sample_size))
+    if estimate.most_recent_sale:
+        table.add_row("Most recent sale", estimate.most_recent_sale.isoformat())
+    if estimate.oldest_sale:
+        table.add_row("Oldest sampled sale", estimate.oldest_sale.isoformat())
+    console.print(table)
+
+    console.print("\n[bold]Recent sales:[/bold]")
+    for listing in estimate.listings[:5]:
+        sold = listing.sold_date.isoformat() if listing.sold_date else "?"
+        console.print(f"  {sold}  {listing.currency} {listing.price:>8.2f}  {listing.title}")
+    console.print(f"\n[dim]{estimate.search_url}[/dim]")
+
+
 if __name__ == "__main__":
     main()

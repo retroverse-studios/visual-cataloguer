@@ -382,6 +382,95 @@ header h1 { font-size: 1.25rem; font-weight: 600; }
   color: var(--text-muted);
 }
 
+.price-panel {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.375rem;
+  font-size: 0.85rem;
+}
+
+.price-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.price-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.price-stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.price-stat-value {
+  font-weight: 600;
+}
+
+.price-stat-median .price-stat-value {
+  color: var(--success);
+  font-size: 1.15rem;
+}
+
+.price-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.price-listings {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  border-top: 1px solid #bbf7d0;
+}
+
+.price-listings li {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #dcfce7;
+  align-items: baseline;
+}
+
+.price-listings li a,
+.price-listings li > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.price-listing-price {
+  font-weight: 600;
+  min-width: 6.5rem;
+}
+
+.price-listing-date {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  min-width: 5.5rem;
+}
+
+.price-search-link {
+  font-size: 0.8rem;
+}
+
+.price-error {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.375rem;
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
 .spinner {
   width: 16px;
   height: 16px;

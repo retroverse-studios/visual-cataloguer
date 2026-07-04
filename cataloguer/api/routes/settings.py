@@ -19,6 +19,7 @@ KNOWN_SETTINGS: dict[str, tuple[str, str]] = {
     "claude_model": ("CLAUDE_MODEL", "claude-haiku-4-5-20251001"),
     "ollama_host": ("OLLAMA_HOST", "http://localhost:11434"),
     "ollama_model": ("OLLAMA_MODEL", "llava"),
+    "ebay_site": ("EBAY_SITE", "www.ebay.com.au"),
 }
 
 # Keys that contain secrets — return masked in GET responses

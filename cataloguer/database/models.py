@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -206,6 +207,22 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Price research snapshots (one row per lookup, building history over time)
+CREATE TABLE IF NOT EXISTS price_estimates (
+    estimate_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id         INTEGER REFERENCES items(item_id) ON DELETE CASCADE,
+    source          TEXT,
+    query           TEXT,
+    currency        TEXT,
+    price_low       REAL,
+    price_median    REAL,
+    price_high      REAL,
+    sample_size     INTEGER,
+    most_recent_sale DATE,
+    search_url      TEXT,
+    fetched_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_items_location ON items(location_id);
 CREATE INDEX IF NOT EXISTS idx_items_title ON items(title_guess);
@@ -216,6 +233,7 @@ CREATE INDEX IF NOT EXISTS idx_items_ebay ON items(ebay_listed);
 CREATE INDEX IF NOT EXISTS idx_items_group ON items(source_item_group);
 CREATE INDEX IF NOT EXISTS idx_items_phash ON items(phash);
 CREATE INDEX IF NOT EXISTS idx_log_hash ON processing_log(source_hash);
+CREATE INDEX IF NOT EXISTS idx_price_item ON price_estimates(item_id);
 CREATE INDEX IF NOT EXISTS idx_images_item ON item_images(item_id);
 CREATE INDEX IF NOT EXISTS idx_images_cover ON item_images(is_cover);
 """
@@ -625,3 +643,57 @@ class Database:
         with self.connection() as conn:
             rows = conn.execute("SELECT key, value FROM settings").fetchall()
             return {row["key"]: row["value"] for row in rows}
+
+    # ── Price estimates ───────────────────────────────────────────
+
+    def add_price_estimate(
+        self,
+        item_id: int,
+        source: str,
+        query: str,
+        currency: str,
+        price_low: float,
+        price_median: float,
+        price_high: float,
+        sample_size: int,
+        most_recent_sale: str | None,
+        search_url: str,
+    ) -> int:
+        """Store a price research snapshot for an item."""
+        with self.connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO price_estimates (
+                    item_id, source, query, currency,
+                    price_low, price_median, price_high,
+                    sample_size, most_recent_sale, search_url
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    source,
+                    query,
+                    currency,
+                    price_low,
+                    price_median,
+                    price_high,
+                    sample_size,
+                    most_recent_sale,
+                    search_url,
+                ),
+            )
+            return int(cursor.lastrowid or 0)
+
+    def get_price_estimates(self, item_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """Get stored price snapshots for an item, newest first."""
+        with self.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM price_estimates
+                WHERE item_id = ?
+                ORDER BY fetched_at DESC, estimate_id DESC
+                LIMIT ?
+                """,
+                (item_id, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]

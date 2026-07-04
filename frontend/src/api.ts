@@ -66,6 +66,29 @@ export interface PaginatedItems {
   per_page: number;
 }
 
+export interface SoldListing {
+  title: string;
+  price: number;
+  currency: string;
+  sold_date: string | null;
+  url: string | null;
+}
+
+export interface PriceEstimate {
+  item_id: number;
+  source: string;
+  query: string;
+  search_url: string;
+  currency: string;
+  price_low: number;
+  price_median: number;
+  price_high: number;
+  sample_size: number;
+  most_recent_sale: string | null;
+  oldest_sale: string | null;
+  listings: SoldListing[];
+}
+
 export interface SearchResults {
   query: string;
   results: Item[];
@@ -117,6 +140,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, model: model || null }),
     }),
+
+  researchPrice: (id: number) =>
+    fetchJSON<PriceEstimate>(`${BASE}/items/${id}/price-research`, { method: 'POST' }),
 
   search: (q: string, params: Record<string, string | number | boolean> = {}) => {
     const qs = new URLSearchParams({ q, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });

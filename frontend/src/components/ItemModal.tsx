@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { api } from '../api';
-import type { Item, ItemUpdate } from '../api';
+import type { Item, ItemUpdate, PriceEstimate } from '../api';
 
 interface Props {
   item: Item;
@@ -19,6 +19,9 @@ export default function ItemModal({ item, onClose, onSaved, onImageChanged }: Pr
   const [reidentifying, setReidentifying] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
+  const [pricing, setPricing] = useState(false);
+  const [priceResult, setPriceResult] = useState<PriceEstimate | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [imgKey, setImgKey] = useState(0);
   const [editingImage, setEditingImage] = useState(false);
   const [cropping, setCropping] = useState(false);
@@ -75,6 +78,26 @@ export default function ItemModal({ item, onClose, onSaved, onImageChanged }: Pr
       console.error('Reidentify failed:', e);
     } finally {
       setReidentifying(false);
+    }
+  };
+
+  const handleResearchPrice = async () => {
+    setPricing(true);
+    setPriceError(null);
+    try {
+      const res = await fetch(`/api/items/${item.item_id}/price-research`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setPriceResult(null);
+        setPriceError(data.detail || 'Price research failed');
+        return;
+      }
+      setPriceResult(data as PriceEstimate);
+    } catch (e) {
+      console.error('Price research failed:', e);
+      setPriceError('Price research failed — is the server running?');
+    } finally {
+      setPricing(false);
     }
   };
 
@@ -201,6 +224,50 @@ export default function ItemModal({ item, onClose, onSaved, onImageChanged }: Pr
             <div className="form-group">
               <label>OCR Text</label>
               <textarea value={item.ocr_text_raw} readOnly className="readonly" rows={2} />
+            </div>
+          )}
+
+          {/* Price research */}
+          <div className="reidentify-bar">
+            <button className="btn btn-sm btn-primary" onClick={handleResearchPrice} disabled={pricing}>
+              {pricing ? 'Searching eBay...' : 'Research Price'}
+            </button>
+            {pricing && <span className="spinner" />}
+          </div>
+          {priceError && <div className="price-error">{priceError}</div>}
+          {priceResult && (
+            <div className="price-panel">
+              <div className="price-stats">
+                <div className="price-stat">
+                  <span className="price-stat-label">Low</span>
+                  <span className="price-stat-value">{priceResult.currency} {priceResult.price_low.toFixed(2)}</span>
+                </div>
+                <div className="price-stat price-stat-median">
+                  <span className="price-stat-label">Median</span>
+                  <span className="price-stat-value">{priceResult.currency} {priceResult.price_median.toFixed(2)}</span>
+                </div>
+                <div className="price-stat">
+                  <span className="price-stat-label">High</span>
+                  <span className="price-stat-value">{priceResult.currency} {priceResult.price_high.toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="price-meta">
+                Based on {priceResult.sample_size} recent sales
+                {priceResult.most_recent_sale && <> · most recent {priceResult.most_recent_sale}</>}
+                {priceResult.oldest_sale && <> · oldest sampled {priceResult.oldest_sale}</>}
+              </div>
+              <ul className="price-listings">
+                {priceResult.listings.slice(0, 5).map((l, i) => (
+                  <li key={i}>
+                    <span className="price-listing-price">{l.currency} {l.price.toFixed(2)}</span>
+                    <span className="price-listing-date">{l.sold_date || ''}</span>
+                    {l.url ? <a href={l.url} target="_blank" rel="noreferrer">{l.title}</a> : <span>{l.title}</span>}
+                  </li>
+                ))}
+              </ul>
+              <a className="price-search-link" href={priceResult.search_url} target="_blank" rel="noreferrer">
+                View all sold listings on eBay →
+              </a>
             </div>
           )}
 
