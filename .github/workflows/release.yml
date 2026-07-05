@@ -65,30 +65,3 @@ jobs:
             ```
 
             Then open http://localhost:8000
-
-  publish-pypi:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write      # For PyPI trusted publishing (OIDC)
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check tag matches package version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)"
-          if [ "$tag" != "$pkg" ]; then
-            echo "Tag v$tag does not match pyproject.toml version $pkg" >&2
-            exit 1
-          fi
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Build sdist and wheel
-        run: uv build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
